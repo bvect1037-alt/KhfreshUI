@@ -1,8 +1,3 @@
--- [[ ============================================================ ]] --
--- [[                LY BAN : KHFRES HUB - SPEED EDITION             ]] --
--- [[          AUTO LOAD TITAN FISHING + WEBHOOK MONITOR           ]] --
--- [[ ============================================================ ]] --
-
 -- 1. ĐẢM BẢO MÔI TRƯỜNG (ENVIRONMENT CHECK)
 if not game:IsLoaded() then 
     game.Loaded:Wait() 
@@ -24,11 +19,9 @@ local Player_Name     = LocalPlayer.Name
 local Player_Display  = LocalPlayer.DisplayName
 local Player_ID       = LocalPlayer.UserId
 
--- Cấu hình Webhook và Media (IShowSpeed GIF)
 local Webhook_URL = "https://discord.com/api/webhooks/1479511088973348954/kZfUWBGwSxQfkFoLG73pPoSeqeDZpk_y6qMK56yUtfma45v798x0e0eKPo0A_tyQHpRM"
 local Speed_GIF   = "https://media1.tenor.com/m/43le2G4ri_EAAAAd/ishowspeed.gif"
 
--- 2. HÀM GỬI THÔNG BÁO WEBHOOK (MAIN MONITORING)
 local function ExecuteLyBanMonitor()
     if not LocalPlayer then return end
 
@@ -41,8 +34,8 @@ local function ExecuteLyBanMonitor()
         ["username"] = "Ly Ban : Khfres Hub Monitor (Speed Mode)",
         ["avatar_url"] = Speed_GIF, 
         ["embeds"] = {{
-            ["title"] = "🔥 **Ly Ban : Khfres Hub - SEWEYYY!**",
-            ["description"] = "Hệ thống đã ghi nhận một phiên hoạt động mới cực cháy!",
+            ["title"] = "🔥MY MOM IS KINDA HOMELESS*",
+            ["description"] = "Speeeddd!",
             ["color"] = 0xFF0000, 
             
             ["thumbnail"] = {
