@@ -39,16 +39,16 @@ local THEMES = {
     Bento = {
         name = "Bento",
         colors = {
-            canvas = Color3.fromRGB(16, 17, 22),
-            shell = Color3.fromRGB(24, 26, 34),
-            rail = Color3.fromRGB(20, 21, 28),
-            raised = Color3.fromRGB(32, 34, 44),
-            card = Color3.fromRGB(36, 38, 50),
-            cardAlt = Color3.fromRGB(42, 44, 58),
-            hover = Color3.fromRGB(48, 52, 68),
-            pressed = Color3.fromRGB(58, 62, 80),
-            line = Color3.fromRGB(55, 58, 75),
-            grid = Color3.fromRGB(40, 42, 55),
+            canvas = Color3.fromRGB(8, 9, 12),
+            shell = Color3.fromRGB(13, 15, 20),
+            rail = Color3.fromRGB(10, 11, 15),
+            raised = Color3.fromRGB(20, 22, 29),
+            card = Color3.fromRGB(21, 23, 30),
+            cardAlt = Color3.fromRGB(25, 28, 37),
+            hover = Color3.fromRGB(31, 35, 46),
+            pressed = Color3.fromRGB(40, 44, 58),
+            line = Color3.fromRGB(58, 63, 80),
+            grid = Color3.fromRGB(34, 37, 47),
             ivory = Color3.fromRGB(245, 247, 252),
             secondary = Color3.fromRGB(170, 175, 195),
             muted = Color3.fromRGB(115, 120, 145),
@@ -295,40 +295,37 @@ local ICON_ALIAS = {
 }
 
 local function resolveIconName(name)
-    if type(name) ~= "string" or name == "" then return "info" end
+    if type(name) ~= "string" or name == "" then return "circle" end
     if string.find(name, "rbxasset", 1, true) then return name end
     local n = string.lower(name):gsub("%s+", "-")
     return ICON_ALIAS[n] or ICON_ALIAS[name] or n
 end
 
-task.spawn(function()
-    pcall(function()
-        local url = "https://raw.githubusercontent.com/Footagesus/Icons/main/Main-v2.lua"
-        local body = game:HttpGet(url)
-        local fn = loadstring(body)
-        if not fn then return end
-        local ok, pack = pcall(fn)
-        if ok and type(pack) == "table" then
-            Lucide.pack = pack
-            pcall(function() if pack.SetIconsType then pack.SetIconsType("lucide") end end)
-            Lucide.ready = true
-        end
-    end)
-    -- fallback Main.lua
-    if not Lucide.ready then
-        pcall(function()
-            local body = game:HttpGet("https://raw.githubusercontent.com/Footagesus/Icons/main/Main.lua")
-            local fn = loadstring(body)
-            if fn then
-                local ok, pack = pcall(fn)
-                if ok and type(pack) == "table" then
-                    Lucide.pack = pack
-                    Lucide.ready = true
+local function loadLucidePack()
+    local urls={
+        "https://raw.githubusercontent.com/Footagesus/Icons/main/Main-v2.lua",
+        "https://raw.githubusercontent.com/Footagesus/Icons/main/Main.lua",
+    }
+    for _,url in ipairs(urls) do
+        local ok, body = pcall(function()
+            if game.HttpGetAsync then return game:HttpGetAsync(url) end
+            return game:HttpGet(url)
+        end)
+        if ok and type(body)=="string" and #body>5000 and type(loadstring)=="function" then
+            local compiled, err = loadstring(body, "@KhfreshIcons")
+            if compiled then
+                local ok2, pack = pcall(compiled)
+                if ok2 and type(pack)=="table" then
+                    pcall(function() if type(pack.SetIconsType)=="function" then pack.SetIconsType("lucide") end end)
+                    Lucide.pack=pack; Lucide.ready=true
+                    return true
                 end
             end
-        end)
+        end
     end
-end)
+    return false
+end
+Lucide.ready = loadLucidePack()
 
 local function applyLucide(img, name)
     if not img then return false end
@@ -341,10 +338,10 @@ local function applyLucide(img, name)
     end
     local pack = Lucide.pack
     if not pack then return false end
-    -- Main-v2 GetIcon returns rbxassetid string
     local ok, res = pcall(function()
-        if pack.GetIcon then return pack.GetIcon(name) end
-        if pack.Icon then return pack.Icon(name) end
+        if type(pack.GetIcon) == "function" then return pack.GetIcon(name, "lucide") end
+        if type(pack.Icon2) == "function" then return pack.Icon2(name, "lucide", true) end
+        if type(pack.Icon) == "function" then return pack.Icon(name, "lucide", true) end
         return nil
     end)
     if not ok or res == nil then return false end
@@ -358,11 +355,11 @@ local function applyLucide(img, name)
         local id = res[1] or res.Image or res.Url
         local meta = res[2] or res
         if type(id) == "string" then img.Image = id
-        elseif type(id) == "number" then img.Image = "rbxassetid://" .. tostring(id) end
+        elseif type(id) == "number" then img.Image = "rbxassetid://" .. tostring(id)
+        else return false end
         if type(meta) == "table" then
-            if meta.ImageRectOffset then img.ImageRectOffset = meta.ImageRectOffset end
-            if meta.ImageRectSize then img.ImageRectSize = meta.ImageRectSize end
-            if meta.ImageRectPosition then img.ImageRectOffset = meta.ImageRectPosition end
+            img.ImageRectOffset = meta.ImageRectPosition or meta.ImageRectOffset or Vector2.zero
+            img.ImageRectSize = meta.ImageRectSize or Vector2.zero
         end
         return true
     end
@@ -370,29 +367,25 @@ local function applyLucide(img, name)
 end
 
 local function lucideIcon(parent, name, position, size, zIndex, color)
+    local chosen = claimIcon(name)
     local img = make("ImageLabel", {
-        Name = "Icon_" .. tostring(name or "x"),
+        Name = "Icon_" .. tostring(chosen),
         BackgroundTransparency = 1,
-        BorderSizePixel = 0,
         Position = position or UDim2.fromOffset(0, 0),
         Size = size or UDim2.fromOffset(18, 18),
         ImageColor3 = color or C.muted,
         ScaleType = Enum.ScaleType.Fit,
         ZIndex = zIndex or 5,
+        ImageTransparency = 0,
     }, parent)
-    if not applyLucide(img, name) then
-        -- schedule retry when pack loads
+    if not applyLucide(img, chosen) then
+        -- No fake bullet: keep a deterministic textless icon slot and retry once the pack is ready.
         task.spawn(function()
-            for _ = 1, 20 do
-                task.wait(0.15)
-                if Lucide.ready and applyLucide(img, name) then break end
+            for _ = 1, 30 do
+                task.wait(0.1)
+                if Lucide.ready and applyLucide(img, chosen) then return end
             end
         end)
-        local t = make("TextLabel", {
-            BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1),
-            Text = "•", TextColor3 = color or C.muted, TextSize = 14,
-            Font = Enum.Font.GothamBold, ZIndex = (zIndex or 5) + 1,
-        }, img)
     end
     return img
 end
@@ -489,9 +482,12 @@ end
 function KhfreshUI:CreateWindow(config)
     config = config or {}
     applyTheme(config.Theme or "Bento")
-    local size = config.Size or UDim2.fromOffset(720, 520)
+    ActiveIconRegistry = {}
+    local size = config.Size or UDim2.fromOffset(760, 540)
     local title = config.Title or "Khfresh UI"
     local author = config.Author or "Bento Grid"
+    local logo = config.Logo or config.LogoImage
+    local background = config.Background
 
     local gui = make("ScreenGui", {
         Name = "KhfreshBentoUI",
@@ -502,113 +498,150 @@ function KhfreshUI:CreateWindow(config)
     }, guiParent)
     pcall(function() if syn and syn.protect_gui then syn.protect_gui(gui) end end)
 
+    local shadow = make("ImageLabel", {
+        Name = "Shadow",
+        BackgroundTransparency = 1,
+        Image = "rbxassetid://84825982946844",
+        ImageColor3 = Color3.new(0,0,0),
+        ImageTransparency = 0.28,
+        Size = UDim2.new(1, 34, 1, 34),
+        Position = UDim2.fromScale(0.5, 0.5),
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        ScaleType = Enum.ScaleType.Stretch,
+        ZIndex = 0,
+    }, gui)
+
     local shell = make("Frame", {
         Name = "Shell",
         BackgroundColor3 = C.canvas,
+        BackgroundTransparency = 0.08,
         BorderSizePixel = 0,
         Size = size,
         Position = UDim2.fromScale(0.5, 0.5),
         AnchorPoint = Vector2.new(0.5, 0.5),
         ClipsDescendants = true,
+        ZIndex = 2,
     }, gui)
     corner(shell, 22)
-    stroke(shell, C.line, 0.35, 1)
+    stroke(shell, C.line, 0.18, 1.2)
 
-    if type(config.Background) == "string" and config.Background ~= "" then
+    if type(background) == "string" and background ~= "" then
         make("ImageLabel", {
-            Name = "Bg", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1),
-            Image = config.Background,
-            ImageTransparency = tonumber(config.BackgroundImageTransparency) or 0.55,
-            ScaleType = Enum.ScaleType.Crop, ZIndex = 0,
+            Name = "Background",
+            BackgroundTransparency = 1,
+            Size = UDim2.fromScale(1,1),
+            Position = UDim2.fromScale(0.5,0.5),
+            AnchorPoint = Vector2.new(0.5,0.5),
+            Image = background,
+            ImageTransparency = tonumber(config.BackgroundImageTransparency) or 0.40,
+            ScaleType = Enum.ScaleType.Crop,
+            ZIndex = 2,
+        }, shell)
+        make("Frame", {
+            Name = "BackgroundShade",
+            BackgroundColor3 = Color3.fromRGB(0,0,0),
+            BackgroundTransparency = tonumber(config.BackgroundShadeTransparency) or 0.24,
+            BorderSizePixel = 0,
+            Size = UDim2.fromScale(1,1),
+            ZIndex = 3,
         }, shell)
     end
 
-    -- TOP BAR
     local top = make("Frame", {
-        Name = "TopBar", BackgroundColor3 = C.shell, BorderSizePixel = 0,
-        Size = UDim2.new(1, 0, 0, 54), ZIndex = 10,
+        Name = "TopBar", BackgroundColor3 = C.shell, BackgroundTransparency = 0.08,
+        BorderSizePixel = 0, Size = UDim2.new(1,0,0,60), ZIndex = 10,
     }, shell)
-    make("Frame", { BackgroundColor3 = C.line, BorderSizePixel = 0,
-        Position = UDim2.new(0, 0, 1, -1), Size = UDim2.new(1, 0, 0, 1), ZIndex = 11 }, top)
-    lucideIcon(top, config.Icon or "layout-dashboard", UDim2.fromOffset(16, 16), UDim2.fromOffset(22, 22), 12, C.accent)
+    make("Frame", { BackgroundColor3 = C.line, BackgroundTransparency = 0.20, BorderSizePixel = 0,
+        Position = UDim2.new(0,0,1,-1), Size = UDim2.new(1,0,0,1), ZIndex = 11 }, top)
+
+    if type(logo) == "string" and logo ~= "" then
+        make("ImageLabel", {
+            Name="Logo", BackgroundTransparency=1, Image=logo,
+            Position=UDim2.fromOffset(16,11), Size=UDim2.fromOffset(38,38),
+            ImageTransparency=0, ScaleType=Enum.ScaleType.Fit, ZIndex=12,
+        }, top)
+    else
+        lucideIcon(top, config.Icon or "layout-dashboard", UDim2.fromOffset(18,19), UDim2.fromOffset(22,22), 12, C.accent)
+    end
     local titleL = label(top, title, 15, C.ivory, true)
-    titleL.Position = UDim2.fromOffset(48, 8); titleL.Size = UDim2.new(1, -160, 0, 22); titleL.ZIndex = 12
+    titleL.Position = UDim2.fromOffset(64,8); titleL.Size = UDim2.new(1,-178,0,24); titleL.ZIndex=12
     local authorL = label(top, author, 11, C.muted, false)
-    authorL.Position = UDim2.fromOffset(48, 30); authorL.Size = UDim2.new(1, -160, 0, 16); authorL.ZIndex = 12
+    authorL.Position = UDim2.fromOffset(64,34); authorL.Size=UDim2.new(1,-178,0,16); authorL.ZIndex=12
 
     local function chromeBtn(x, iconName)
-        local b = make("TextButton", {
-            Text = "", BackgroundColor3 = C.raised, AutoButtonColor = false,
-            Size = UDim2.fromOffset(30, 30), Position = UDim2.new(1, x, 0.5, -15), ZIndex = 12,
-        }, top)
-        corner(b, 10)
-        lucideIcon(b, iconName, UDim2.fromOffset(6, 6), UDim2.fromOffset(18, 18), 13, C.secondary)
+        local b=make("TextButton", {Text="", BackgroundColor3=C.raised, BackgroundTransparency=0.08,
+            AutoButtonColor=false, Size=UDim2.fromOffset(34,34), Position=UDim2.new(1,x,0.5,-17), ZIndex=12}, top)
+        corner(b,12); stroke(b,C.line,0.35,1)
+        lucideIcon(b,iconName,UDim2.fromOffset(8,8),UDim2.fromOffset(18,18),13,C.secondary)
         return b
     end
-    local closeBtn = chromeBtn(-42, "x")
-    local minBtn = chromeBtn(-78, "minus")
+    local closeBtn=chromeBtn(-48,"x")
+    local minBtn=chromeBtn(-90,"minus")
 
-    -- LEFT RAIL
-    local rail = make("ScrollingFrame", {
-        Name = "Rail", BackgroundColor3 = C.rail, BorderSizePixel = 0,
-        Size = UDim2.new(0, 148, 1, -54), Position = UDim2.fromOffset(0, 54),
-        ScrollBarThickness = 2, ScrollBarImageColor3 = C.muted,
-        CanvasSize = UDim2.new(0, 0, 0, 0), AutomaticCanvasSize = Enum.AutomaticSize.Y,
-        ZIndex = 8,
+    local rail=make("ScrollingFrame", {
+        Name="Rail", BackgroundColor3=C.rail, BackgroundTransparency=0.08, BorderSizePixel=0,
+        Size=UDim2.new(0,164,1,-60), Position=UDim2.fromOffset(0,60), ScrollBarThickness=2,
+        ScrollBarImageColor3=C.muted, CanvasSize=UDim2.new(0,0,0,0), AutomaticCanvasSize=Enum.AutomaticSize.Y,
+        ZIndex=8,
     }, shell)
-    listLayout(rail, 6)
-    pad(rail, 10, 10, 12, 12)
-    make("Frame", { BackgroundColor3 = C.line, BorderSizePixel = 0,
-        Position = UDim2.new(1, -1, 0, 0), Size = UDim2.new(0, 1, 1, 0), ZIndex = 9 }, rail)
+    listLayout(rail,7); pad(rail,10,10,12,12)
+    rail.CanvasPosition = Vector2.zero
+    make("Frame", {BackgroundColor3=C.line, BackgroundTransparency=0.35, BorderSizePixel=0,
+        Position=UDim2.new(1,-1,0,0), Size=UDim2.new(0,1,1,0), ZIndex=9}, rail)
 
-    -- CONTENT
-    local content = make("Frame", {
-        Name = "Content", BackgroundColor3 = C.canvas, BorderSizePixel = 0,
-        Size = UDim2.new(1, -148, 1, -54), Position = UDim2.fromOffset(148, 54),
-        ClipsDescendants = true, ZIndex = 5,
+    local content=make("Frame", {
+        Name="Content", BackgroundColor3=C.canvas, BackgroundTransparency=0.16, BorderSizePixel=0,
+        Size=UDim2.new(1,-164,1,-60), Position=UDim2.fromOffset(164,60), ClipsDescendants=true, ZIndex=5,
     }, shell)
 
-    local win = setmetatable({
-        _gui = gui, _shell = shell, _rail = rail, _content = content,
-        _tabs = {}, _selected = nil, _open = true, _connections = {},
-    }, Window)
+    local win=setmetatable({
+        _gui=gui,_shell=shell,_shadow=shadow,_rail=rail,_content=content,
+        _top=top,_tabs={},_selected=nil,_open=true,_connections={},_logo=logo,
+    },Window)
+    bindClick(closeBtn,function() win:Destroy() end)
+    bindClick(minBtn,function() win:Toggle() end)
 
-    bindClick(closeBtn, function() win:Destroy() end)
-    bindClick(minBtn, function() win:Toggle() end)
-
-    -- drag
-    local dragging, dragStart, startPos
+    local dragging,dragStart,startPos
     top.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true; dragStart = input.Position; startPos = shell.Position
+        if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then
+            dragging=true; dragStart=input.Position; startPos=shell.Position
         end
     end)
-    table.insert(win._connections, UserInputService.InputChanged:Connect(function(input)
-        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-            local d = input.Position - dragStart
-            shell.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y)
+    table.insert(win._connections,UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType==Enum.UserInputType.MouseMovement or input.UserInputType==Enum.UserInputType.Touch) then
+            local d=input.Position-dragStart
+            shell.Position=UDim2.new(startPos.X.Scale,startPos.X.Offset+d.X,startPos.Y.Scale,startPos.Y.Offset+d.Y)
+            shadow.Position=shell.Position
         end
     end))
-    table.insert(win._connections, UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = false end
+    table.insert(win._connections,UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then dragging=false end
     end))
-
-    table.insert(KhfreshUI._windows, win)
-    -- Force visible (some executors hide new ScreenGui until next frame)
-    gui.Enabled = true
-    shell.Visible = true
-    pcall(function()
-        shell.Parent = gui
-        gui.Parent = guiParent
-    end)
-    task.spawn(function()
-        for _ = 1, 40 do
-            task.wait(0.15)
-            if not gui or not gui.Parent then break end
-            pcall(function() gui.Enabled = true; shell.Visible = true; gui.DisplayOrder = 2147483646 end)
-        end
-    end)
+    table.insert(KhfreshUI._windows,win)
+    gui.Enabled=true; shell.Visible=true; shadow.Visible=true
+    gui.Parent=guiParent
     return win
+end
+
+function Window:CreateFloatingToggle(config)
+    config=config or {}
+    local parent=guiParent
+    local old=parent:FindFirstChild("KhfreshFloatingGui")
+    if old then pcall(function() old:Destroy() end) end
+    local sg=make("ScreenGui",{Name="KhfreshFloatingGui",ResetOnSpawn=false,IgnoreGuiInset=true,DisplayOrder=2147483640,ZIndexBehavior=Enum.ZIndexBehavior.Sibling},parent)
+    pcall(function() if syn and syn.protect_gui then syn.protect_gui(sg) end end)
+    local shadow=make("ImageLabel",{BackgroundTransparency=1,Image="rbxassetid://84825982946844",ImageTransparency=0.25,Size=UDim2.fromOffset(70,70),Position=UDim2.new(0,5,0.5,-35),ZIndex=1},sg)
+    local btn=make("ImageButton",{Name="ToggleBtn",BackgroundColor3=C.shell,BackgroundTransparency=0.02,Image=config.Icon or self._logo or "",ImageColor3=Color3.new(1,1,1),Size=UDim2.fromOffset(58,58),Position=UDim2.new(0,10,0.5,-29),AutoButtonColor=false,ZIndex=2},sg)
+    corner(btn,18); stroke(btn,C.line,0.15,1.2)
+    if btn.Image=="" then
+        local i=lucideIcon(btn,"layout-dashboard",UDim2.fromOffset(15,15),UDim2.fromOffset(28,28),3,C.accent)
+    end
+    local scale=make("UIScale",{Scale=1},btn)
+    btn.MouseEnter:Connect(function() tween(scale,Motion.hover,{Scale=1.06}) end)
+    btn.MouseLeave:Connect(function() tween(scale,Motion.hover,{Scale=1}) end)
+    btn.Activated:Connect(function() self:Toggle() end)
+    self._floatingGui=sg; self._floatingButton=btn; self._floatingShadow=shadow
+    return sg
 end
 
 function Window:CreateTab(nameOrConfig, icon)
@@ -620,20 +653,24 @@ function Window:CreateTab(nameOrConfig, icon)
         title = tostring(nameOrConfig or "Tab")
         iconName = icon
     end
-    iconName = iconName or "info"
+    iconName = iconName or "layout-panel-left"
 
     local tabBtn = make("TextButton", {
         Name = "Tab_" .. title,
         Text = "",
-        BackgroundColor3 = C.raised,
+        BackgroundColor3 = C.card,
+        BackgroundTransparency = 0.04,
         BorderSizePixel = 0,
-        Size = UDim2.new(1, 0, 0, 42),
+        Size = UDim2.new(1, 0, 0, 44),
         AutoButtonColor = false,
         LayoutOrder = #self._tabs + 1,
         ZIndex = 9,
     }, self._rail)
-    corner(tabBtn, 14)
-    local ico = lucideIcon(tabBtn, iconName, UDim2.fromOffset(12, 12), UDim2.fromOffset(18, 18), 10, C.muted)
+    corner(tabBtn, 13)
+    stroke(tabBtn, C.line, 0.62, 1)
+    local accentStrip = make("Frame", {BackgroundColor3=C.accent, BackgroundTransparency=1, BorderSizePixel=0, Size=UDim2.new(0,3,0,24), Position=UDim2.new(0,0,0.5,-12), ZIndex=12}, tabBtn)
+    corner(accentStrip, 2)
+    local ico = lucideIcon(tabBtn, iconName, UDim2.fromOffset(12, 13), UDim2.fromOffset(18, 18), 10, C.muted)
     local tabLbl = label(tabBtn, title, 12, C.secondary, true)
     tabLbl.Position = UDim2.fromOffset(36, 0); tabLbl.Size = UDim2.new(1, -44, 1, 0); tabLbl.ZIndex = 10
 
@@ -654,7 +691,7 @@ function Window:CreateTab(nameOrConfig, icon)
 
     local tab = setmetatable({
         _window = self, _btn = tabBtn, _scroll = page, _title = title,
-        _icon = iconName, _iconImg = ico, _lbl = tabLbl, _order = 0,
+        _icon = iconName, _iconImg = ico, _accentStrip = accentStrip, _lbl = tabLbl, _order = 0,
     }, Tab)
     table.insert(self._tabs, tab)
     bindClick(tabBtn, function() self:_select(tab) end)
@@ -667,27 +704,11 @@ function Window:_select(tab)
     for _, t in ipairs(self._tabs) do
         local on = t == tab
         t._scroll.Visible = on
-        t._btn.BackgroundColor3 = on and C.accentSoft or C.raised
+        t._btn.BackgroundColor3 = on and Color3.fromRGB(math.min(C.card.R*255+12,255), math.min(C.card.G*255+12,255), math.min(C.card.B*255+12,255)) or C.card
         t._lbl.TextColor3 = on and C.ivory or C.secondary
         if t._iconImg then t._iconImg.ImageColor3 = on and C.accent or C.muted end
+        if t._accentStrip then t._accentStrip.BackgroundTransparency = on and 0 or 1 end
     end
-end
-
-function Window:CreateFloatingToggle(config)
-    config = config or {}
-    local parent = guiParent
-    local old = parent:FindFirstChild("KhfreshFloatingGui")
-    if old then pcall(function() old:Destroy() end) end
-    local sg = make("ScreenGui", {Name="KhfreshFloatingGui", ResetOnSpawn=false, IgnoreGuiInset=true, DisplayOrder=2147483644, ZIndexBehavior=Enum.ZIndexBehavior.Sibling}, parent)
-    local sz = tonumber(config.Size) or 52
-    local btn = make("ImageButton", {Name="ToggleBtn", Size=UDim2.fromOffset(sz,sz), Position=config.Position or UDim2.new(0,14,0.5,-sz/2), BackgroundColor3=C.raised, BackgroundTransparency=0.04, BorderSizePixel=0, AutoButtonColor=false, Image=(config.Logo or ""), ImageColor3=Color3.new(1,1,1), ScaleType=Enum.ScaleType.Fit, ZIndex=5}, sg)
-    corner(btn,16); stroke(btn,C.line,0.22,1)
-    if btn.Image=="" then
-        local txt=label(btn,"K",22,C.ivory,true); txt.TextXAlignment=Enum.TextXAlignment.Center
-    end
-    bindClick(btn,function() self:Toggle() end)
-    self._floatingGui=sg; self._floatingButton=btn
-    return sg
 end
 
 function Window:SelectTab(i)
@@ -703,6 +724,12 @@ function Window:Destroy()
     if self._gui then pcall(function() self._gui:Destroy() end) end
 end
 function Window:ToggleAcrylic() end
+function Window:SetLogo(asset)
+    self._logo = asset
+    local logo = self._top and self._top:FindFirstChild("Logo")
+    if logo then logo.Image = tostring(asset or "") end
+    if self._floatingButton and asset then self._floatingButton.Image = tostring(asset) end
+end
 
 function Tab:CreateHeader(config)
     config = type(config) == "table" and config or { Title = tostring(config or "") }
@@ -728,8 +755,9 @@ function Section:CreateToggle(config)
     config = config or {}
     local tab = self._tab
     local card = bentoCard(tab._scroll, 48, nextOrder(tab))
+    local toggleIcon = lucideIcon(card, config.Icon or "toggle-right", UDim2.fromOffset(14,15), UDim2.fromOffset(18,18), 3, C.accent)
     local title = label(card, config.Name or config.Title or "Toggle", 13, C.ivory, true)
-    title.Position = UDim2.fromOffset(16, 0); title.Size = UDim2.new(1, -80, 1, 0); title.ZIndex = 3
+    title.Position = UDim2.fromOffset(40, 0); title.Size = UDim2.new(1, -106, 1, 0); title.ZIndex = 3
     local track = make("Frame", {
         BackgroundColor3 = (config.Default or config.Value) and C.accent or Color3.fromRGB(55, 58, 70),
         AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -14, 0.5, 0),
@@ -758,9 +786,9 @@ function Section:CreateButton(config)
     config = config or {}
     local tab = self._tab
     local card = bentoCard(tab._scroll, 48, nextOrder(tab))
+    local buttonIcon = lucideIcon(card, config.Icon or "arrow-right", UDim2.fromOffset(14,15), UDim2.fromOffset(18,18), 4, C.accent)
     local title = label(card, config.Name or config.Title or "Button", 13, C.ivory, true)
-    title.Position = UDim2.fromOffset(16, 0); title.Size = UDim2.new(1, -48, 1, 0); title.ZIndex = 3
-    lucideIcon(card, "chevron-right", UDim2.new(1, -30, 0.5, -9), UDim2.fromOffset(18, 18), 4, C.accent)
+    title.Position = UDim2.fromOffset(40, 0); title.Size = UDim2.new(1, -72, 1, 0); title.ZIndex = 3
     local hit = make("TextButton", { Text = "", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), ZIndex = 20, AutoButtonColor = false }, card)
     bindClick(hit, function() if config.Callback then config.Callback() end end)
     return { _frame = card }
@@ -773,10 +801,11 @@ function Section:CreateDropdown(config)
     local selected = config.Default or config.Value or options[1] or "Select"
     local card = bentoCard(tab._scroll, 48, nextOrder(tab))
     card.ClipsDescendants = true
+    local dropdownIcon = lucideIcon(card, config.Icon or "chevron-down", UDim2.fromOffset(14,16), UDim2.fromOffset(16,16), 4, C.accent)
     local title = label(card, config.Name or config.Title or "Dropdown", 12, C.secondary, true)
-    title.Position = UDim2.fromOffset(16, 0); title.Size = UDim2.new(0.42, 0, 0, 48); title.ZIndex = 3
+    title.Position = UDim2.fromOffset(38, 0); title.Size = UDim2.new(0.38, 0, 0, 48); title.ZIndex = 3
     local valueLbl = label(card, tostring(selected), 12, C.ivory, false)
-    valueLbl.Position = UDim2.new(0.42, 0, 0, 0); valueLbl.Size = UDim2.new(0.58, -36, 0, 48)
+    valueLbl.Position = UDim2.new(0.40, 0, 0, 0); valueLbl.Size = UDim2.new(0.60, -36, 0, 48)
     valueLbl.TextXAlignment = Enum.TextXAlignment.Right; valueLbl.ZIndex = 3
     lucideIcon(card, "chevron-down", UDim2.new(1, -28, 0, 16), UDim2.fromOffset(16, 16), 4, C.accent)
     local open = false
