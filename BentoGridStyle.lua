@@ -1,6 +1,6 @@
 --[[
   Khfresh Bento UI v2
-  True Bento Grid layout • Lucide icons
+  True Bento Grid layout • Lucide icons 
 ]]
 
 local TweenService = game:GetService("TweenService")
@@ -262,6 +262,27 @@ end
 
 -- ========== LUCIDE ICONS ==========
 local Lucide = { ready = false, pack = nil }
+local ActiveIconRegistry = {}
+
+local ICON_FALLBACK_POOL = {
+    "circle-dot","sparkles","bolt","star","diamond","hexagon","triangle",
+    "flame","leaf","moon","sun","cloud","waves","globe","compass","anchor",
+    "target","crosshair","radio","cpu","database","terminal","code-2","braces",
+    "command","workflow","list-checks","badge-check","shield-check","crown",
+    "gem","wand-sparkles","rocket","mouse-pointer-2","mouse-pointer-click",
+    "package","archive","layers","layout-grid","panel-left","panel-right",
+    "panel-top","scan","search-check","eye","eye-off","bell","bookmark",
+    "folder","file-text","clipboard","calendar","clock","timer","gauge",
+    "activity","bar-chart-3","chart-line","coins","wallet","hand","hand-coins",
+    "heart","heart-handshake","send","share-2","link-2","external-link",
+    "download","upload","rotate-cw","repeat","shuffle","settings-2",
+    "wrench","hammer","key-round","lock-keyhole","unlock-keyhole","map",
+    "map-pinned","navigation","route","ship-wheel","sailboat","fish-symbol",
+    "fish-off","swords","axe","badge-dollar-sign","shopping-bag",
+    "shopping-cart","store","receipt","scroll-text","book-open",
+    "graduation-cap","brain","stars",
+}
+
 local ICON_ALIAS = {
     ["dashboard"] = "layout-dashboard",
     ["layout"] = "layout-dashboard",
@@ -294,75 +315,142 @@ local ICON_ALIAS = {
     ["discord"] = "message-circle",
 }
 
-local function resolveIconName(name)
-    if type(name) ~= "string" or name == "" then return "circle" end
+local function normalizeIconName(name)
+    if type(name) ~= "string" or name == "" then return nil end
     if string.find(name, "rbxasset", 1, true) then return name end
-    local n = string.lower(name):gsub("%s+", "-")
+    local n = string.lower(name):gsub("%s+", "-"):gsub("_", "-")
     return ICON_ALIAS[n] or ICON_ALIAS[name] or n
 end
 
+local function getLucideValue(name)
+    name = normalizeIconName(name)
+    if not name or string.find(name, "rbxasset", 1, true) then return name end
+    local pack = Lucide.pack
+    if not pack then return nil end
+    local ok, result = pcall(function()
+        if type(pack.GetIcon) == "function" then
+            return pack.GetIcon(name, "lucide")
+        end
+        if type(pack.Icon2) == "function" then
+            return pack.Icon2(name, "lucide", true)
+        end
+        if type(pack.Icon) == "function" then
+            return pack.Icon(name, "lucide", true)
+        end
+        return nil
+    end)
+    return ok and result or nil
+end
+
+local function iconExists(name)
+    return getLucideValue(name) ~= nil
+end
+
+local function claimIcon(name)
+    local requested = normalizeIconName(name) or "sparkles"
+    if string.find(requested, "rbxasset", 1, true) then
+        return requested
+    end
+
+    if not ActiveIconRegistry[requested] and iconExists(requested) then
+        ActiveIconRegistry[requested] = true
+        return requested
+    end
+
+    for _, candidate in ipairs(ICON_FALLBACK_POOL) do
+        local n = normalizeIconName(candidate)
+        if n and not ActiveIconRegistry[n] and iconExists(n) then
+            ActiveIconRegistry[n] = true
+            return n
+        end
+    end
+
+    ActiveIconRegistry[requested] = true
+    return requested
+end
+
+local function resolveIconName(name)
+    return normalizeIconName(name) or "sparkles"
+end
+
 local function loadLucidePack()
-    local urls={
+    local urls = {
         "https://raw.githubusercontent.com/Footagesus/Icons/main/Main-v2.lua",
         "https://raw.githubusercontent.com/Footagesus/Icons/main/Main.lua",
     }
-    for _,url in ipairs(urls) do
+
+    for _, url in ipairs(urls) do
         local ok, body = pcall(function()
-            if game.HttpGetAsync then return game:HttpGetAsync(url) end
+            if type(game.HttpGetAsync) == "function" then
+                return game:HttpGetAsync(url)
+            end
             return game:HttpGet(url)
         end)
-        if ok and type(body)=="string" and #body>5000 and type(loadstring)=="function" then
-            local compiled, err = loadstring(body, "@KhfreshIcons")
-            if compiled then
-                local ok2, pack = pcall(compiled)
-                if ok2 and type(pack)=="table" then
-                    pcall(function() if type(pack.SetIconsType)=="function" then pack.SetIconsType("lucide") end end)
-                    Lucide.pack=pack; Lucide.ready=true
+
+        if ok and type(body) == "string" and #body > 5000 and type(loadstring) == "function" then
+            local chunk = loadstring(body, "@KhfreshIcons")
+            if chunk then
+                local ok2, pack = pcall(chunk)
+                if ok2 and type(pack) == "table" then
+                    pcall(function()
+                        if type(pack.SetIconsType) == "function" then
+                            pack.SetIconsType("lucide")
+                        end
+                    end)
+                    Lucide.pack = pack
+                    Lucide.ready = true
                     return true
                 end
             end
         end
     end
+
+    Lucide.ready = false
     return false
 end
+
 Lucide.ready = loadLucidePack()
 
 local function applyLucide(img, name)
     if not img then return false end
     name = resolveIconName(name)
+
     if string.find(tostring(name), "rbxasset", 1, true) then
         img.Image = name
         img.ImageRectOffset = Vector2.zero
         img.ImageRectSize = Vector2.zero
         return true
     end
-    local pack = Lucide.pack
-    if not pack then return false end
-    local ok, res = pcall(function()
-        if type(pack.GetIcon) == "function" then return pack.GetIcon(name, "lucide") end
-        if type(pack.Icon2) == "function" then return pack.Icon2(name, "lucide", true) end
-        if type(pack.Icon) == "function" then return pack.Icon(name, "lucide", true) end
-        return nil
-    end)
-    if not ok or res == nil then return false end
+
+    local res = getLucideValue(name)
+    if res == nil then return false end
+
     if type(res) == "string" then
         img.Image = res
         img.ImageRectOffset = Vector2.zero
         img.ImageRectSize = Vector2.zero
         return true
     end
+
     if type(res) == "table" then
-        local id = res[1] or res.Image or res.Url
+        local imageId = res[1] or res.Image or res.Url
         local meta = res[2] or res
-        if type(id) == "string" then img.Image = id
-        elseif type(id) == "number" then img.Image = "rbxassetid://" .. tostring(id)
-        else return false end
+        if type(imageId) == "number" then
+            imageId = "rbxassetid://" .. tostring(imageId)
+        end
+        if type(imageId) ~= "string" then return false end
+
+        img.Image = imageId
         if type(meta) == "table" then
             img.ImageRectOffset = meta.ImageRectPosition or meta.ImageRectOffset or Vector2.zero
             img.ImageRectSize = meta.ImageRectSize or Vector2.zero
+        else
+            img.ImageRectOffset = Vector2.zero
+            img.ImageRectSize = Vector2.zero
         end
         return true
     end
+
     return false
 end
 
@@ -371,6 +459,7 @@ local function lucideIcon(parent, name, position, size, zIndex, color)
     local img = make("ImageLabel", {
         Name = "Icon_" .. tostring(chosen),
         BackgroundTransparency = 1,
+        BorderSizePixel = 0,
         Position = position or UDim2.fromOffset(0, 0),
         Size = size or UDim2.fromOffset(18, 18),
         ImageColor3 = color or C.muted,
@@ -378,15 +467,19 @@ local function lucideIcon(parent, name, position, size, zIndex, color)
         ZIndex = zIndex or 5,
         ImageTransparency = 0,
     }, parent)
+
     if not applyLucide(img, chosen) then
-        -- No fake bullet: keep a deterministic textless icon slot and retry once the pack is ready.
         task.spawn(function()
-            for _ = 1, 30 do
+            -- Retry in case the icon pack was delayed by the executor.
+            for _ = 1, 40 do
                 task.wait(0.1)
-                if Lucide.ready and applyLucide(img, chosen) then return end
+                if Lucide.ready and applyLucide(img, chosen) then
+                    return
+                end
             end
         end)
     end
+
     return img
 end
 
@@ -514,7 +607,7 @@ function KhfreshUI:CreateWindow(config)
     local shell = make("Frame", {
         Name = "Shell",
         BackgroundColor3 = C.canvas,
-        BackgroundTransparency = 0.08,
+        BackgroundTransparency = 0.16,
         BorderSizePixel = 0,
         Size = size,
         Position = UDim2.fromScale(0.5, 0.5),
@@ -533,14 +626,15 @@ function KhfreshUI:CreateWindow(config)
             Position = UDim2.fromScale(0.5,0.5),
             AnchorPoint = Vector2.new(0.5,0.5),
             Image = background,
-            ImageTransparency = tonumber(config.BackgroundImageTransparency) or 0.40,
+            ImageColor3 = Color3.new(1,1,1),
+            ImageTransparency = tonumber(config.BackgroundImageTransparency) or 0.18,
             ScaleType = Enum.ScaleType.Crop,
-            ZIndex = 2,
+            ZIndex = 1,
         }, shell)
         make("Frame", {
             Name = "BackgroundShade",
             BackgroundColor3 = Color3.fromRGB(0,0,0),
-            BackgroundTransparency = tonumber(config.BackgroundShadeTransparency) or 0.24,
+            BackgroundTransparency = tonumber(config.BackgroundShadeTransparency) or 0.30,
             BorderSizePixel = 0,
             Size = UDim2.fromScale(1,1),
             ZIndex = 3,
@@ -579,7 +673,7 @@ function KhfreshUI:CreateWindow(config)
     local minBtn=chromeBtn(-90,"minus")
 
     local rail=make("ScrollingFrame", {
-        Name="Rail", BackgroundColor3=C.rail, BackgroundTransparency=0.08, BorderSizePixel=0,
+        Name="Rail", BackgroundColor3=C.rail, BackgroundTransparency=0.025, BorderSizePixel=0,
         Size=UDim2.new(0,164,1,-60), Position=UDim2.fromOffset(0,60), ScrollBarThickness=2,
         ScrollBarImageColor3=C.muted, CanvasSize=UDim2.new(0,0,0,0), AutomaticCanvasSize=Enum.AutomaticSize.Y,
         ZIndex=8,
@@ -590,7 +684,7 @@ function KhfreshUI:CreateWindow(config)
         Position=UDim2.new(1,-1,0,0), Size=UDim2.new(0,1,1,0), ZIndex=9}, rail)
 
     local content=make("Frame", {
-        Name="Content", BackgroundColor3=C.canvas, BackgroundTransparency=0.16, BorderSizePixel=0,
+        Name="Content", BackgroundColor3=C.canvas, BackgroundTransparency=0.30, BorderSizePixel=0,
         Size=UDim2.new(1,-164,1,-60), Position=UDim2.fromOffset(164,60), ClipsDescendants=true, ZIndex=5,
     }, shell)
 
@@ -620,6 +714,27 @@ function KhfreshUI:CreateWindow(config)
     table.insert(KhfreshUI._windows,win)
     gui.Enabled=true; shell.Visible=true; shadow.Visible=true
     gui.Parent=guiParent
+
+    task.defer(function()
+        task.wait()
+        if not win._gui or not win._gui.Parent then return end
+        win._gui.Enabled = true
+        win._shell.Visible = true
+        win._shadow.Visible = true
+
+        local bg = win._shell:FindFirstChild("Background")
+        if bg and type(background) == "string" then
+            bg.Image = background
+            bg.Visible = true
+        end
+
+        local brand = win._top and win._top:FindFirstChild("Logo")
+        if brand and type(logo) == "string" then
+            brand.Image = logo
+            brand.Visible = true
+        end
+    end)
+
     return win
 end
 
@@ -641,6 +756,9 @@ function Window:CreateFloatingToggle(config)
     btn.MouseLeave:Connect(function() tween(scale,Motion.hover,{Scale=1}) end)
     btn.Activated:Connect(function() self:Toggle() end)
     self._floatingGui=sg; self._floatingButton=btn; self._floatingShadow=shadow
+    sg.Enabled = true
+    btn.Visible = true
+    shadow.Visible = true
     return sg
 end
 
@@ -729,6 +847,30 @@ function Window:SetLogo(asset)
     local logo = self._top and self._top:FindFirstChild("Logo")
     if logo then logo.Image = tostring(asset or "") end
     if self._floatingButton and asset then self._floatingButton.Image = tostring(asset) end
+end
+function Window:SetBackground(asset, imageTransparency, shadeTransparency)
+    local bg = self._shell and self._shell:FindFirstChild("Background")
+    if not bg then
+        bg = make("ImageLabel", {
+            Name="Background",
+            BackgroundTransparency=1,
+            Size=UDim2.fromScale(1,1),
+            Position=UDim2.fromScale(0.5,0.5),
+            AnchorPoint=Vector2.new(0.5,0.5),
+            ScaleType=Enum.ScaleType.Crop,
+            ZIndex=1,
+        }, self._shell)
+    end
+
+    bg.Image = tostring(asset or "")
+    bg.ImageTransparency = tonumber(imageTransparency) or 0.18
+    bg.Visible = tostring(asset or "") ~= ""
+
+    local shade = self._shell and self._shell:FindFirstChild("BackgroundShade")
+    if shade then
+        shade.BackgroundTransparency = tonumber(shadeTransparency) or 0.30
+        shade.Visible = bg.Visible
+    end
 end
 
 function Tab:CreateHeader(config)
