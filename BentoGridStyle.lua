@@ -65,12 +65,12 @@ local THEMES = {
     Dark = {
         name = "Dark",
         colors = {
-            canvas = Color3.fromRGB(10, 10, 12),
-            shell = Color3.fromRGB(18, 18, 22),
-            rail = Color3.fromRGB(14, 14, 18),
-            raised = Color3.fromRGB(26, 26, 32),
-            card = Color3.fromRGB(30, 30, 38),
-            cardAlt = Color3.fromRGB(36, 36, 46),
+            canvas = Color3.fromRGB(7, 8, 11),
+            shell = Color3.fromRGB(13, 14, 18),
+            rail = Color3.fromRGB(9, 10, 13),
+            raised = Color3.fromRGB(20, 21, 27),
+            card = Color3.fromRGB(17, 18, 23),
+            cardAlt = Color3.fromRGB(22, 23, 29),
             hover = Color3.fromRGB(44, 44, 54),
             pressed = Color3.fromRGB(54, 54, 66),
             line = Color3.fromRGB(48, 48, 58),
@@ -260,117 +260,84 @@ local function addGridPattern(parent, z)
     return holder
 end
 
--- ========== LUCIDE ICONS ==========
+-- ========== LUCIDE ICONS (ROBUST) ==========
 local Lucide = { ready = false, pack = nil }
-local ActiveIconRegistry = {}
+local IconCache = {}
+local UsedTabIcons = {}
 
 local ICON_FALLBACK_POOL = {
-    "circle-dot","sparkles","bolt","star","diamond","hexagon","triangle",
-    "flame","leaf","moon","sun","cloud","waves","globe","compass","anchor",
-    "target","crosshair","radio","cpu","database","terminal","code-2","braces",
-    "command","workflow","list-checks","badge-check","shield-check","crown",
-    "gem","wand-sparkles","rocket","mouse-pointer-2","mouse-pointer-click",
-    "package","archive","layers","layout-grid","panel-left","panel-right",
-    "panel-top","scan","search-check","eye","eye-off","bell","bookmark",
-    "folder","file-text","clipboard","calendar","clock","timer","gauge",
-    "activity","bar-chart-3","chart-line","coins","wallet","hand","hand-coins",
-    "heart","heart-handshake","send","share-2","link-2","external-link",
-    "download","upload","rotate-cw","repeat","shuffle","settings-2",
-    "wrench","hammer","key-round","lock-keyhole","unlock-keyhole","map",
-    "map-pinned","navigation","route","ship-wheel","sailboat","fish-symbol",
-    "fish-off","swords","axe","badge-dollar-sign","shopping-bag",
-    "shopping-cart","store","receipt","scroll-text","book-open",
-    "graduation-cap","brain","stars",
+    "layout-grid","panels-top-left","panel-left","house","settings","sliders-horizontal",
+    "fish","fishing-rod","ship","map-pin","scroll-text","store","shopping-cart",
+    "repeat-2","trending-up","swords","shield-check","hand-heart","flame","cloud-sun",
+    "gamepad-2","users-round","user-round","message-circle","music-2","history","info",
+    "sparkles","star","diamond","hexagon","triangle","leaf","moon","sun","waves",
+    "globe","compass","anchor","target","crosshair","cpu","database","terminal",
+    "code-2","braces","command","workflow","list-checks","badge-check","crown","gem",
+    "rocket","package","archive","layers","scan","eye","eye-off","bell","bookmark",
+    "folder","file-text","clipboard","calendar","clock","timer","gauge","activity",
+    "coins","wallet","hand-coins","heart","heart-handshake","send","share-2","link-2",
+    "external-link","download","upload","rotate-cw","repeat","shuffle","wrench","hammer",
+    "key-round","lock-keyhole","unlock-keyhole","map","map-pinned","navigation","route",
+    "ship-wheel","sailboat","fish-symbol","fish-off","axe","badge-dollar-sign","receipt",
+    "book-open","graduation-cap","brain","stars","zap","package-check","circle-help"
 }
 
 local ICON_ALIAS = {
-    ["dashboard"] = "layout-dashboard",
-    ["layout"] = "layout-dashboard",
-    ["home"] = "house",
-    ["settings"] = "settings",
-    ["config"] = "sliders-horizontal",
-    ["tune"] = "sliders-horizontal",
-    ["fish"] = "fish",
-    ["zap"] = "zap",
-    ["box"] = "box",
-    ["user"] = "user",
-    ["users"] = "users",
-    ["info"] = "info",
-    ["check"] = "circle-check",
-    ["search"] = "search",
-    ["store"] = "store",
-    ["map"] = "map-pin",
-    ["shield"] = "shield",
-    ["play"] = "play",
-    ["list"] = "list",
-    ["volleyball"] = "circle",
-    ["chevron_right"] = "chevron-right",
-    ["chevron_down"] = "chevron-down",
-    ["expand_more"] = "chevron-down",
-    ["close"] = "x",
-    ["remove"] = "minus",
-    ["add"] = "plus",
-    ["shopping_bag"] = "shopping-bag",
-    ["history"] = "history",
-    ["discord"] = "message-circle",
+    dashboard="layout-dashboard", layout="layout-dashboard", home="house", config="sliders-horizontal", tune="sliders-horizontal",
+    fish="fish", cast="fishing-rod", fishing="fishing-rod", pray="hand-heart", spirit="flame", octo="fish-symbol",
+    octoparasite="fish-symbol", enzo="gamepad-2", boss="swords", combat="swords", sell="badge-dollar-sign", buy="shopping-cart",
+    shop="store", exchange="repeat-2", quest="scroll-text", quests="scroll-text", upgrade="trending-up", teleport="map-pin",
+    boat="ship", player="user-round", players="users-round", npc="user-round", secret="lock-keyhole", staff="shield-check",
+    esp="scan", settings="settings", safety="shield-check", code="code-2", language="languages", discord="message-circle",
+    youtube="play", tiktok="music-2", close="x", remove="minus", add="plus", info="info", history="history"
 }
 
 local function normalizeIconName(name)
     if type(name) ~= "string" or name == "" then return nil end
     if string.find(name, "rbxasset", 1, true) then return name end
     local n = string.lower(name):gsub("%s+", "-"):gsub("_", "-")
-    return ICON_ALIAS[n] or ICON_ALIAS[name] or n
+    return ICON_ALIAS[n] or n
 end
 
-local function getLucideValue(name)
-    name = normalizeIconName(name)
-    if not name or string.find(name, "rbxasset", 1, true) then return name end
+local function iconValue(name)
+    local normalized = normalizeIconName(name)
+    if not normalized then return nil end
+    if string.find(normalized, "rbxasset", 1, true) then return normalized end
+    if IconCache[normalized] ~= nil then return IconCache[normalized] end
     local pack = Lucide.pack
     if not pack then return nil end
-    local ok, result = pcall(function()
-        if type(pack.GetIcon) == "function" then
-            return pack.GetIcon(name, "lucide")
-        end
-        if type(pack.Icon2) == "function" then
-            return pack.Icon2(name, "lucide", true)
-        end
+    local ok, value = pcall(function()
         if type(pack.Icon) == "function" then
-            return pack.Icon(name, "lucide", true)
+            return pack.Icon(normalized, "lucide", true)
         end
         return nil
     end)
-    return ok and result or nil
+    if ok and value ~= nil then
+        IconCache[normalized] = value
+        return value
+    end
+    IconCache[normalized] = false
+    return nil
 end
 
 local function iconExists(name)
-    return getLucideValue(name) ~= nil
+    return iconValue(name) ~= nil
 end
 
-local function claimIcon(name)
-    local requested = normalizeIconName(name) or "sparkles"
-    if string.find(requested, "rbxasset", 1, true) then
-        return requested
+local function getUniqueTabIcon(requested)
+    local wanted = normalizeIconName(requested)
+    if wanted and not UsedTabIcons[wanted] and iconExists(wanted) then
+        UsedTabIcons[wanted] = true
+        return wanted
     end
-
-    if not ActiveIconRegistry[requested] and iconExists(requested) then
-        ActiveIconRegistry[requested] = true
-        return requested
-    end
-
     for _, candidate in ipairs(ICON_FALLBACK_POOL) do
         local n = normalizeIconName(candidate)
-        if n and not ActiveIconRegistry[n] and iconExists(n) then
-            ActiveIconRegistry[n] = true
+        if n and not UsedTabIcons[n] and iconExists(n) then
+            UsedTabIcons[n] = true
             return n
         end
     end
-
-    ActiveIconRegistry[requested] = true
-    return requested
-end
-
-local function resolveIconName(name)
-    return normalizeIconName(name) or "sparkles"
+    return wanted or "layout-grid"
 end
 
 local function loadLucidePack()
@@ -378,24 +345,18 @@ local function loadLucidePack()
         "https://raw.githubusercontent.com/Footagesus/Icons/main/Main-v2.lua",
         "https://raw.githubusercontent.com/Footagesus/Icons/main/Main.lua",
     }
-
     for _, url in ipairs(urls) do
         local ok, body = pcall(function()
-            if type(game.HttpGetAsync) == "function" then
-                return game:HttpGetAsync(url)
-            end
+            if type(game.HttpGetAsync) == "function" then return game:HttpGetAsync(url) end
             return game:HttpGet(url)
         end)
-
         if ok and type(body) == "string" and #body > 5000 and type(loadstring) == "function" then
             local chunk = loadstring(body, "@KhfreshIcons")
             if chunk then
                 local ok2, pack = pcall(chunk)
                 if ok2 and type(pack) == "table" then
                     pcall(function()
-                        if type(pack.SetIconsType) == "function" then
-                            pack.SetIconsType("lucide")
-                        end
+                        if type(pack.SetIconsType) == "function" then pack.SetIconsType("lucide") end
                     end)
                     Lucide.pack = pack
                     Lucide.ready = true
@@ -404,60 +365,52 @@ local function loadLucidePack()
             end
         end
     end
-
-    Lucide.ready = false
     return false
 end
 
-Lucide.ready = loadLucidePack()
+-- Icon loading may be slow; failure must NEVER prevent the UI itself from being built.
+pcall(function() loadLucidePack() end)
 
 local function applyLucide(img, name)
     if not img then return false end
-    name = resolveIconName(name)
-
-    if string.find(tostring(name), "rbxasset", 1, true) then
-        img.Image = name
+    local normalized = normalizeIconName(name)
+    if not normalized then return false end
+    if string.find(normalized, "rbxasset", 1, true) then
+        img.Image = normalized
         img.ImageRectOffset = Vector2.zero
         img.ImageRectSize = Vector2.zero
         return true
     end
-
-    local res = getLucideValue(name)
-    if res == nil then return false end
-
-    if type(res) == "string" then
-        img.Image = res
+    local result = iconValue(normalized)
+    if type(result) == "string" then
+        img.Image = result
         img.ImageRectOffset = Vector2.zero
         img.ImageRectSize = Vector2.zero
         return true
     end
-
-    if type(res) == "table" then
-        local imageId = res[1] or res.Image or res.Url
-        local meta = res[2] or res
-        if type(imageId) == "number" then
-            imageId = "rbxassetid://" .. tostring(imageId)
-        end
+    if type(result) == "table" then
+        local imageId = result[1]
+        local meta = result[2]
         if type(imageId) ~= "string" then return false end
-
         img.Image = imageId
         if type(meta) == "table" then
-            img.ImageRectOffset = meta.ImageRectPosition or meta.ImageRectOffset or Vector2.zero
             img.ImageRectSize = meta.ImageRectSize or Vector2.zero
+            img.ImageRectOffset = meta.ImageRectPosition or meta.ImageRectOffset or Vector2.zero
         else
-            img.ImageRectOffset = Vector2.zero
             img.ImageRectSize = Vector2.zero
+            img.ImageRectOffset = Vector2.zero
         end
         return true
     end
-
     return false
 end
 
-local function lucideIcon(parent, name, position, size, zIndex, color)
-    local chosen = claimIcon(name)
+local function lucideIcon(parent, name, position, size, zIndex, color, isTab)
+    local chosen = normalizeIconName(name) or "layout-grid"
+    if isTab then chosen = getUniqueTabIcon(chosen) end
+
     local img = make("ImageLabel", {
-        Name = "Icon_" .. tostring(chosen),
+        Name = "Icon_" .. tostring(chosen):gsub("[^%w_]", "_"),
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
         Position = position or UDim2.fromOffset(0, 0),
@@ -469,17 +422,19 @@ local function lucideIcon(parent, name, position, size, zIndex, color)
     }, parent)
 
     if not applyLucide(img, chosen) then
+        -- Never throw from icon resolution. Retry asynchronously.
         task.spawn(function()
-            -- Retry in case the icon pack was delayed by the executor.
-            for _ = 1, 40 do
+            for _ = 1, 50 do
                 task.wait(0.1)
-                if Lucide.ready and applyLucide(img, chosen) then
-                    return
-                end
+                if applyLucide(img, chosen) then return end
+            end
+            -- Emergency non-Lucide fallback only if the remote icon pack is unavailable.
+            -- The UI itself remains functional.
+            if img.Parent and img.Image == "" then
+                img.Image = "rbxassetid://0"
             end
         end)
     end
-
     return img
 end
 
@@ -573,14 +528,15 @@ function KhfreshUI:Notify(config)
 end
 
 function KhfreshUI:CreateWindow(config)
-    config = config or {}
+    config = type(config) == "table" and config or {}
     applyTheme(config.Theme or "Bento")
-    ActiveIconRegistry = {}
-    local size = config.Size or UDim2.fromOffset(760, 540)
-    local title = config.Title or "Khfresh UI"
-    local author = config.Author or "Bento Grid"
+    UsedTabIcons = {}
+
+    local size = config.Size or UDim2.fromOffset(780, 560)
+    local title = tostring(config.Title or "Khfresh UI")
+    local author = tostring(config.Author or "Bento Grid")
     local logo = config.Logo or config.LogoImage
-    local background = config.Background
+    local background = config.Background or config.BackgroundImage
 
     local gui = make("ScreenGui", {
         Name = "KhfreshBentoUI",
@@ -589,288 +545,263 @@ function KhfreshUI:CreateWindow(config)
         DisplayOrder = 2147483645,
         ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
     }, guiParent)
-    pcall(function() if syn and syn.protect_gui then syn.protect_gui(gui) end end)
+    pcall(function()
+        if syn and syn.protect_gui then syn.protect_gui(gui) end
+    end)
 
     local shadow = make("ImageLabel", {
-        Name = "Shadow",
-        BackgroundTransparency = 1,
-        Image = "rbxassetid://84825982946844",
-        ImageColor3 = Color3.new(0,0,0),
-        ImageTransparency = 0.28,
-        Size = UDim2.new(1, 34, 1, 34),
-        Position = UDim2.fromScale(0.5, 0.5),
-        AnchorPoint = Vector2.new(0.5, 0.5),
-        ScaleType = Enum.ScaleType.Stretch,
-        ZIndex = 0,
+        Name = "Shadow", BackgroundTransparency = 1,
+        Image = "rbxassetid://84825982946844", ImageColor3 = Color3.new(0,0,0),
+        ImageTransparency = 0.18, Size = UDim2.new(1, 42, 1, 42),
+        Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = Vector2.new(0.5, 0.5),
+        ScaleType = Enum.ScaleType.Stretch, ZIndex = 0,
     }, gui)
 
     local shell = make("Frame", {
-        Name = "Shell",
-        BackgroundColor3 = C.canvas,
-        BackgroundTransparency = 0.16,
-        BorderSizePixel = 0,
-        Size = size,
-        Position = UDim2.fromScale(0.5, 0.5),
-        AnchorPoint = Vector2.new(0.5, 0.5),
-        ClipsDescendants = true,
-        ZIndex = 2,
+        Name = "Shell", BackgroundColor3 = C.canvas, BackgroundTransparency = 0.03,
+        BorderSizePixel = 0, Size = size, Position = UDim2.fromScale(0.5, 0.5),
+        AnchorPoint = Vector2.new(0.5, 0.5), ClipsDescendants = true, ZIndex = 2,
     }, gui)
-    corner(shell, 22)
-    stroke(shell, C.line, 0.18, 1.2)
+    corner(shell, 24)
+    stroke(shell, C.line, 0.12, 1.2)
 
     if type(background) == "string" and background ~= "" then
-        make("ImageLabel", {
-            Name = "Background",
-            BackgroundTransparency = 1,
-            Size = UDim2.fromScale(1,1),
-            Position = UDim2.fromScale(0.5,0.5),
-            AnchorPoint = Vector2.new(0.5,0.5),
-            Image = background,
-            ImageColor3 = Color3.new(1,1,1),
-            ImageTransparency = tonumber(config.BackgroundImageTransparency) or 0.18,
-            ScaleType = Enum.ScaleType.Crop,
-            ZIndex = 1,
+        local bg = make("ImageLabel", {
+            Name = "Background", BackgroundTransparency = 1,
+            Size = UDim2.fromScale(1,1), Position = UDim2.fromScale(0.5,0.5),
+            AnchorPoint = Vector2.new(0.5,0.5), Image = background,
+            ImageTransparency = tonumber(config.BackgroundImageTransparency) or 0.24,
+            ScaleType = Enum.ScaleType.Crop, ZIndex = 1,
         }, shell)
+        bg.Visible = true
         make("Frame", {
-            Name = "BackgroundShade",
-            BackgroundColor3 = Color3.fromRGB(0,0,0),
+            Name = "BackgroundShade", BackgroundColor3 = Color3.new(0,0,0),
             BackgroundTransparency = tonumber(config.BackgroundShadeTransparency) or 0.30,
-            BorderSizePixel = 0,
-            Size = UDim2.fromScale(1,1),
-            ZIndex = 3,
+            BorderSizePixel = 0, Size = UDim2.fromScale(1,1), ZIndex = 3,
         }, shell)
     end
 
     local top = make("Frame", {
-        Name = "TopBar", BackgroundColor3 = C.shell, BackgroundTransparency = 0.08,
-        BorderSizePixel = 0, Size = UDim2.new(1,0,0,60), ZIndex = 10,
+        Name = "TopBar", BackgroundColor3 = C.shell, BackgroundTransparency = 0.02,
+        BorderSizePixel = 0, Size = UDim2.new(1,0,0,62), ZIndex = 10,
     }, shell)
-    make("Frame", { BackgroundColor3 = C.line, BackgroundTransparency = 0.20, BorderSizePixel = 0,
-        Position = UDim2.new(0,0,1,-1), Size = UDim2.new(1,0,0,1), ZIndex = 11 }, top)
+    corner(top, 20)
+
+    make("Frame", {
+        BackgroundColor3 = C.line, BackgroundTransparency = 0.15, BorderSizePixel = 0,
+        Position = UDim2.new(0,0,1,-1), Size = UDim2.new(1,0,0,1), ZIndex = 11,
+    }, top)
 
     if type(logo) == "string" and logo ~= "" then
         make("ImageLabel", {
-            Name="Logo", BackgroundTransparency=1, Image=logo,
-            Position=UDim2.fromOffset(16,11), Size=UDim2.fromOffset(38,38),
-            ImageTransparency=0, ScaleType=Enum.ScaleType.Fit, ZIndex=12,
+            Name = "Logo", BackgroundTransparency = 1, Image = logo,
+            Position = UDim2.fromOffset(14,10), Size = UDim2.fromOffset(42,42),
+            ImageTransparency = 0, ScaleType = Enum.ScaleType.Fit, ZIndex = 12,
         }, top)
     else
-        lucideIcon(top, config.Icon or "layout-dashboard", UDim2.fromOffset(18,19), UDim2.fromOffset(22,22), 12, C.accent)
+        lucideIcon(top, config.Icon or "layout-dashboard", UDim2.fromOffset(20,20), UDim2.fromOffset(22,22), 12, C.accent)
     end
+
     local titleL = label(top, title, 15, C.ivory, true)
-    titleL.Position = UDim2.fromOffset(64,8); titleL.Size = UDim2.new(1,-178,0,24); titleL.ZIndex=12
+    titleL.Position = UDim2.fromOffset(66,7); titleL.Size = UDim2.new(1,-190,0,24); titleL.ZIndex = 12
     local authorL = label(top, author, 11, C.muted, false)
-    authorL.Position = UDim2.fromOffset(64,34); authorL.Size=UDim2.new(1,-178,0,16); authorL.ZIndex=12
+    authorL.Position = UDim2.fromOffset(66,34); authorL.Size = UDim2.new(1,-190,0,16); authorL.ZIndex = 12
 
     local function chromeBtn(x, iconName)
-        local b=make("TextButton", {Text="", BackgroundColor3=C.raised, BackgroundTransparency=0.08,
-            AutoButtonColor=false, Size=UDim2.fromOffset(34,34), Position=UDim2.new(1,x,0.5,-17), ZIndex=12}, top)
-        corner(b,12); stroke(b,C.line,0.35,1)
-        lucideIcon(b,iconName,UDim2.fromOffset(8,8),UDim2.fromOffset(18,18),13,C.secondary)
+        local b = make("TextButton", {
+            Text = "", BackgroundColor3 = C.raised, BackgroundTransparency = 0.04,
+            AutoButtonColor = false, Size = UDim2.fromOffset(34,34),
+            Position = UDim2.new(1,x,0.5,-17), ZIndex = 12,
+        }, top)
+        corner(b,12); stroke(b,C.line,0.28,1)
+        lucideIcon(b, iconName, UDim2.fromOffset(8,8), UDim2.fromOffset(18,18), 13, C.secondary)
         return b
     end
-    local closeBtn=chromeBtn(-48,"x")
-    local minBtn=chromeBtn(-90,"minus")
+    local closeBtn = chromeBtn(-48, "x")
+    local minBtn = chromeBtn(-90, "minus")
 
-    local rail=make("ScrollingFrame", {
-        Name="Rail", BackgroundColor3=C.rail, BackgroundTransparency=0.025, BorderSizePixel=0,
-        Size=UDim2.new(0,164,1,-60), Position=UDim2.fromOffset(0,60), ScrollBarThickness=2,
-        ScrollBarImageColor3=C.muted, CanvasSize=UDim2.new(0,0,0,0), AutomaticCanvasSize=Enum.AutomaticSize.Y,
-        ZIndex=8,
+    local rail = make("ScrollingFrame", {
+        Name="Rail", BackgroundColor3=C.rail, BackgroundTransparency=0.02, BorderSizePixel=0,
+        Size=UDim2.new(0,170,1,-62), Position=UDim2.fromOffset(0,62), ScrollBarThickness=2,
+        ScrollBarImageColor3=C.muted, CanvasSize=UDim2.new(0,0,0,0),
+        AutomaticCanvasSize=Enum.AutomaticSize.Y, ZIndex=8,
     }, shell)
     listLayout(rail,7); pad(rail,10,10,12,12)
-    rail.CanvasPosition = Vector2.zero
-    make("Frame", {BackgroundColor3=C.line, BackgroundTransparency=0.35, BorderSizePixel=0,
+    make("Frame", {BackgroundColor3=C.line, BackgroundTransparency=0.42, BorderSizePixel=0,
         Position=UDim2.new(1,-1,0,0), Size=UDim2.new(0,1,1,0), ZIndex=9}, rail)
 
-    local content=make("Frame", {
-        Name="Content", BackgroundColor3=C.canvas, BackgroundTransparency=0.30, BorderSizePixel=0,
-        Size=UDim2.new(1,-164,1,-60), Position=UDim2.fromOffset(164,60), ClipsDescendants=true, ZIndex=5,
+    local content = make("Frame", {
+        Name="Content", BackgroundColor3=C.canvas, BackgroundTransparency=0.46, BorderSizePixel=0,
+        Size=UDim2.new(1,-170,1,-62), Position=UDim2.fromOffset(170,62),
+        ClipsDescendants=true, ZIndex=5,
     }, shell)
 
-    local win=setmetatable({
-        _gui=gui,_shell=shell,_shadow=shadow,_rail=rail,_content=content,
-        _top=top,_tabs={},_selected=nil,_open=true,_connections={},_logo=logo,
-    },Window)
-    bindClick(closeBtn,function() win:Destroy() end)
-    bindClick(minBtn,function() win:Toggle() end)
+    local win = setmetatable({
+        _gui=gui, _raw=nil, _shell=shell, _shadow=shadow, _rail=rail, _content=content, _top=top,
+        _tabs={}, _selected=nil, _open=true, _connections={}, _logo=logo, _background=background,
+        _floatingGui=nil, _floatingButton=nil,
+    }, Window)
 
-    local dragging,dragStart,startPos
+    bindClick(closeBtn, function() win:Destroy() end)
+    bindClick(minBtn, function() win:Toggle() end)
+
+    local dragging, dragStart, startPos
     top.InputBegan:Connect(function(input)
         if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then
             dragging=true; dragStart=input.Position; startPos=shell.Position
         end
     end)
-    table.insert(win._connections,UserInputService.InputChanged:Connect(function(input)
+    table.insert(win._connections, UserInputService.InputChanged:Connect(function(input)
         if dragging and (input.UserInputType==Enum.UserInputType.MouseMovement or input.UserInputType==Enum.UserInputType.Touch) then
             local d=input.Position-dragStart
             shell.Position=UDim2.new(startPos.X.Scale,startPos.X.Offset+d.X,startPos.Y.Scale,startPos.Y.Offset+d.Y)
             shadow.Position=shell.Position
         end
     end))
-    table.insert(win._connections,UserInputService.InputEnded:Connect(function(input)
+    table.insert(win._connections, UserInputService.InputEnded:Connect(function(input)
         if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then dragging=false end
     end))
-    table.insert(KhfreshUI._windows,win)
-    gui.Enabled=true; shell.Visible=true; shadow.Visible=true
-    gui.Parent=guiParent
 
-    task.defer(function()
-        task.wait()
-        if not win._gui or not win._gui.Parent then return end
-        win._gui.Enabled = true
-        win._shell.Visible = true
-        win._shadow.Visible = true
-
-        local bg = win._shell:FindFirstChild("Background")
-        if bg and type(background) == "string" then
-            bg.Image = background
-            bg.Visible = true
-        end
-
-        local brand = win._top and win._top:FindFirstChild("Logo")
-        if brand and type(logo) == "string" then
-            brand.Image = logo
-            brand.Visible = true
-        end
-    end)
-
+    table.insert(KhfreshUI._windows, win)
+    win._raw = win
+    gui.Enabled=true; shell.Visible=true; shadow.Visible=true; gui.Parent=guiParent
     return win
 end
 
 function Window:CreateFloatingToggle(config)
-    config=config or {}
-    local parent=guiParent
-    local old=parent:FindFirstChild("KhfreshFloatingGui")
+    config = type(config) == "table" and config or {}
+    local parent = guiParent
+    local old = parent:FindFirstChild("KhfreshFloatingGui")
     if old then pcall(function() old:Destroy() end) end
-    local sg=make("ScreenGui",{Name="KhfreshFloatingGui",ResetOnSpawn=false,IgnoreGuiInset=true,DisplayOrder=2147483640,ZIndexBehavior=Enum.ZIndexBehavior.Sibling},parent)
+
+    local sg = make("ScreenGui", {
+        Name="KhfreshFloatingGui", ResetOnSpawn=false, IgnoreGuiInset=true,
+        DisplayOrder=2147483640, ZIndexBehavior=Enum.ZIndexBehavior.Sibling,
+    }, parent)
     pcall(function() if syn and syn.protect_gui then syn.protect_gui(sg) end end)
-    local shadow=make("ImageLabel",{BackgroundTransparency=1,Image="rbxassetid://84825982946844",ImageTransparency=0.25,Size=UDim2.fromOffset(70,70),Position=UDim2.new(0,5,0.5,-35),ZIndex=1},sg)
-    local btn=make("ImageButton",{Name="ToggleBtn",BackgroundColor3=C.shell,BackgroundTransparency=0.02,Image=config.Icon or self._logo or "",ImageColor3=Color3.new(1,1,1),Size=UDim2.fromOffset(58,58),Position=UDim2.new(0,10,0.5,-29),AutoButtonColor=false,ZIndex=2},sg)
-    corner(btn,18); stroke(btn,C.line,0.15,1.2)
-    if btn.Image=="" then
-        local i=lucideIcon(btn,"layout-dashboard",UDim2.fromOffset(15,15),UDim2.fromOffset(28,28),3,C.accent)
+
+    local shadow = make("Frame", {
+        Name="Shadow", BackgroundColor3=Color3.new(0,0,0), BackgroundTransparency=0.48,
+        Size=UDim2.fromOffset(68,68), Position=UDim2.new(0,8,0.5,-30), BorderSizePixel=0, ZIndex=1,
+    }, sg)
+    corner(shadow,20)
+
+    local btn = make("ImageButton", {
+        Name="ToggleBtn", BackgroundColor3=C.shell, BackgroundTransparency=0.01,
+        Image=tostring(config.Icon or self._logo or ""), ImageColor3=Color3.new(1,1,1),
+        Size=UDim2.fromOffset(58,58), Position=UDim2.new(0,13,0.5,-29),
+        AutoButtonColor=false, ZIndex=2,
+    }, sg)
+    corner(btn,18); stroke(btn,C.line,0.12,1.2)
+    btn.Visible=true
+    if btn.Image == "" then
+        lucideIcon(btn,"layout-dashboard",UDim2.fromOffset(15,15),UDim2.fromOffset(28,28),3,C.accent)
     end
     local scale=make("UIScale",{Scale=1},btn)
     btn.MouseEnter:Connect(function() tween(scale,Motion.hover,{Scale=1.06}) end)
     btn.MouseLeave:Connect(function() tween(scale,Motion.hover,{Scale=1}) end)
     btn.Activated:Connect(function() self:Toggle() end)
+    sg.Enabled=true
     self._floatingGui=sg; self._floatingButton=btn; self._floatingShadow=shadow
-    sg.Enabled = true
-    btn.Visible = true
-    shadow.Visible = true
     return sg
 end
 
 function Window:CreateTab(nameOrConfig, icon)
     local title, iconName
-    if type(nameOrConfig) == "table" then
-        title = nameOrConfig.Title or nameOrConfig.Name or "Tab"
-        iconName = nameOrConfig.Icon or icon
+    if type(nameOrConfig)=="table" then
+        title=nameOrConfig.Title or nameOrConfig.Name or "Tab"; iconName=nameOrConfig.Icon or icon
     else
-        title = tostring(nameOrConfig or "Tab")
-        iconName = icon
+        title=tostring(nameOrConfig or "Tab"); iconName=icon
     end
-    iconName = iconName or "layout-panel-left"
+    title=tostring(title); iconName=iconName or "layout-grid"
 
-    local tabBtn = make("TextButton", {
-        Name = "Tab_" .. title,
-        Text = "",
-        BackgroundColor3 = C.card,
-        BackgroundTransparency = 0.04,
-        BorderSizePixel = 0,
-        Size = UDim2.new(1, 0, 0, 44),
-        AutoButtonColor = false,
-        LayoutOrder = #self._tabs + 1,
-        ZIndex = 9,
+    local tabBtn=make("TextButton", {
+        Name="Tab_"..title:gsub("[^%w_]","_"), Text="", BackgroundColor3=C.card,
+        BackgroundTransparency=0.04, BorderSizePixel=0, Size=UDim2.new(1,0,0,44),
+        AutoButtonColor=false, LayoutOrder=#self._tabs+1, ZIndex=9, Active=true,
     }, self._rail)
-    corner(tabBtn, 13)
-    stroke(tabBtn, C.line, 0.62, 1)
-    local accentStrip = make("Frame", {BackgroundColor3=C.accent, BackgroundTransparency=1, BorderSizePixel=0, Size=UDim2.new(0,3,0,24), Position=UDim2.new(0,0,0.5,-12), ZIndex=12}, tabBtn)
-    corner(accentStrip, 2)
-    local ico = lucideIcon(tabBtn, iconName, UDim2.fromOffset(12, 13), UDim2.fromOffset(18, 18), 10, C.muted)
-    local tabLbl = label(tabBtn, title, 12, C.secondary, true)
-    tabLbl.Position = UDim2.fromOffset(36, 0); tabLbl.Size = UDim2.new(1, -44, 1, 0); tabLbl.ZIndex = 10
+    corner(tabBtn,14); stroke(tabBtn,C.line,0.52,1)
+    local strip=make("Frame", {BackgroundColor3=C.accent, BackgroundTransparency=1, BorderSizePixel=0,
+        Size=UDim2.new(0,3,0,24), Position=UDim2.new(0,0,0.5,-12), ZIndex=12}, tabBtn)
+    corner(strip,2)
+    local ico=lucideIcon(tabBtn,iconName,UDim2.fromOffset(12,13),UDim2.fromOffset(18,18),10,C.muted,true)
+    local lbl=label(tabBtn,title,12,C.secondary,true)
+    lbl.Position=UDim2.fromOffset(36,0); lbl.Size=UDim2.new(1,-44,1,0); lbl.ZIndex=10
 
-    local page = make("ScrollingFrame", {
-        Name = "Page_" .. title,
-        BackgroundTransparency = 1,
-        Size = UDim2.fromScale(1, 1),
-        ScrollBarThickness = 4,
-        ScrollBarImageColor3 = C.muted,
-        CanvasSize = UDim2.new(0, 0, 0, 0),
-        AutomaticCanvasSize = Enum.AutomaticSize.Y,
-        Visible = false,
-        BorderSizePixel = 0,
-        ZIndex = 6,
+    local page=make("ScrollingFrame", {
+        Name="Page_"..title:gsub("[^%w_]","_"), BackgroundTransparency=1, Size=UDim2.fromScale(1,1),
+        ScrollBarThickness=4, ScrollBarImageColor3=C.muted, CanvasSize=UDim2.new(0,0,0,0),
+        AutomaticCanvasSize=Enum.AutomaticSize.Y, Visible=false, BorderSizePixel=0, ZIndex=6,
     }, self._content)
-    listLayout(page, 10)
-    pad(page, 14, 14, 12, 18)
+    listLayout(page,10); pad(page,14,14,12,18)
 
-    local tab = setmetatable({
-        _window = self, _btn = tabBtn, _scroll = page, _title = title,
-        _icon = iconName, _iconImg = ico, _accentStrip = accentStrip, _lbl = tabLbl, _order = 0,
-    }, Tab)
-    table.insert(self._tabs, tab)
-    bindClick(tabBtn, function() self:_select(tab) end)
-    if #self._tabs == 1 then self:_select(tab) end
+    local tab=setmetatable({
+        _window=self,_btn=tabBtn,_scroll=page,_title=title,_icon=iconName,
+        _iconImg=ico,_accentStrip=strip,_lbl=lbl,_order=0,
+    },Tab)
+    table.insert(self._tabs,tab)
+    bindClick(tabBtn,function() self:_select(tab) end)
+    if #self._tabs==1 then self:_select(tab) end
     return tab
 end
 
 function Window:_select(tab)
-    self._selected = tab
-    for _, t in ipairs(self._tabs) do
-        local on = t == tab
-        t._scroll.Visible = on
-        t._btn.BackgroundColor3 = on and Color3.fromRGB(math.min(C.card.R*255+12,255), math.min(C.card.G*255+12,255), math.min(C.card.B*255+12,255)) or C.card
-        t._lbl.TextColor3 = on and C.ivory or C.secondary
-        if t._iconImg then t._iconImg.ImageColor3 = on and C.accent or C.muted end
-        if t._accentStrip then t._accentStrip.BackgroundTransparency = on and 0 or 1 end
+    if not tab or not tab._scroll then return end
+    self._selected=tab
+    for _,t in ipairs(self._tabs) do
+        local on=t==tab
+        t._scroll.Visible=on
+        t._btn.BackgroundColor3=on and C.raised or C.card
+        t._lbl.TextColor3=on and C.ivory or C.secondary
+        if t._iconImg then t._iconImg.ImageColor3=on and C.accent or C.muted end
+        if t._accentStrip then t._accentStrip.BackgroundTransparency=on and 0 or 1 end
     end
 end
 
 function Window:SelectTab(i)
-    local t = self._tabs[tonumber(i) or 0]
-    if t then self:_select(t) end
+    local index=tonumber(i) or 1
+    local t=self._tabs[index]
+    if t then self:_select(t); return t end
+end
+function Window:GetTabs() return self._tabs end
+function Window:GetTab(title)
+    local want=string.lower(tostring(title or ""))
+    for _,t in ipairs(self._tabs) do
+        if string.lower(t._title)==want then return t end
+    end
+    return nil
 end
 function Window:Toggle()
-    self._open = not self._open
-    self._shell.Visible = self._open
+    self._open=not self._open
+    self._shell.Visible=self._open
+    if self._shadow then self._shadow.Visible=self._open end
 end
 function Window:Destroy()
-    for _, c in ipairs(self._connections) do pcall(function() c:Disconnect() end) end
+    for _,c in ipairs(self._connections) do pcall(function() c:Disconnect() end) end
+    if self._floatingGui then pcall(function() self._floatingGui:Destroy() end) end
     if self._gui then pcall(function() self._gui:Destroy() end) end
 end
 function Window:ToggleAcrylic() end
 function Window:SetLogo(asset)
-    self._logo = asset
-    local logo = self._top and self._top:FindFirstChild("Logo")
-    if logo then logo.Image = tostring(asset or "") end
-    if self._floatingButton and asset then self._floatingButton.Image = tostring(asset) end
+    self._logo=tostring(asset or "")
+    local logo=self._top and self._top:FindFirstChild("Logo")
+    if logo then logo.Image=self._logo; logo.Visible=self._logo~="" end
+    if self._floatingButton and self._logo~="" then self._floatingButton.Image=self._logo end
 end
-function Window:SetBackground(asset, imageTransparency, shadeTransparency)
-    local bg = self._shell and self._shell:FindFirstChild("Background")
+function Window:SetBackground(asset,imageTransparency,shadeTransparency)
+    self._background=tostring(asset or "")
+    local bg=self._shell and self._shell:FindFirstChild("Background")
     if not bg then
-        bg = make("ImageLabel", {
-            Name="Background",
-            BackgroundTransparency=1,
-            Size=UDim2.fromScale(1,1),
-            Position=UDim2.fromScale(0.5,0.5),
-            AnchorPoint=Vector2.new(0.5,0.5),
-            ScaleType=Enum.ScaleType.Crop,
-            ZIndex=1,
-        }, self._shell)
+        bg=make("ImageLabel",{Name="Background",BackgroundTransparency=1,Size=UDim2.fromScale(1,1),
+            Position=UDim2.fromScale(0.5,0.5),AnchorPoint=Vector2.new(0.5,0.5),ScaleType=Enum.ScaleType.Crop,ZIndex=1},self._shell)
     end
-
-    bg.Image = tostring(asset or "")
-    bg.ImageTransparency = tonumber(imageTransparency) or 0.18
-    bg.Visible = tostring(asset or "") ~= ""
-
-    local shade = self._shell and self._shell:FindFirstChild("BackgroundShade")
-    if shade then
-        shade.BackgroundTransparency = tonumber(shadeTransparency) or 0.30
-        shade.Visible = bg.Visible
+    bg.Image=self._background; bg.ImageTransparency=tonumber(imageTransparency) or 0.24; bg.Visible=self._background~=""
+    local shade=self._shell and self._shell:FindFirstChild("BackgroundShade")
+    if not shade then
+        shade=make("Frame",{Name="BackgroundShade",BackgroundColor3=Color3.new(0,0,0),BorderSizePixel=0,
+            Size=UDim2.fromScale(1,1),ZIndex=3},self._shell)
     end
+    shade.BackgroundTransparency=tonumber(shadeTransparency) or 0.30; shade.Visible=bg.Visible
 end
 
 function Tab:CreateHeader(config)
