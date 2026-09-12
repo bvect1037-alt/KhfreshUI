@@ -18350,7 +18350,10 @@ local function play(object: Instance, properties: {[string]: any}, info: TweenIn
 		animation:Play()
 		return animation
 	end)
-	return if ok then result else nil
+	if ok then
+		return result
+	end
+	return nil
 end
 
 local function clamp(value: number, minimum: number, maximum: number): number
@@ -18434,7 +18437,11 @@ local function icon(parent: Instance?, name: string, size: number, color: Color3
 			if asset.ImageRectSize then properties.ImageRectSize = asset.ImageRectSize end
 		else
 			local assetText = tostring(asset)
-			properties.Image = if string.find(assetText, "rbxassetid://", 1, true) then assetText else "rbxassetid://" .. assetText
+			if string.find(assetText, "rbxassetid://", 1, true) then
+				properties.Image = assetText
+			else
+				properties.Image = "rbxassetid://" .. assetText
+			end
 		end
 		return make("ImageLabel", properties, parent)
 	end
@@ -18576,7 +18583,10 @@ end
 
 function Library:_safeTargetSize(): (number, number)
 	local camera = workspace.CurrentCamera
-	local viewport = if camera then camera.ViewportSize else Vector2.new(900, 650)
+	local viewport = Vector2.new(900, 650)
+	if camera then
+		viewport = camera.ViewportSize
+	end
 	local width = clamp(self._targetWidth, 320, math.max(320, viewport.X - 28))
 	local height = clamp(self._targetHeight, 280, math.max(280, viewport.Y - 74))
 	return width, height
@@ -19096,8 +19106,12 @@ function Library:_makeSection(tab: any, options: Options): any
 		}, frame)
 		self:_theme(label, "TextColor3", "Muted")
 	end
-	local contentTop = if options.Title then 35 else 0
-	local contentBottom = if options.Title then -35 else 0
+	local contentTop = 0
+	local contentBottom = 0
+	if options.Title then
+		contentTop = 35
+		contentBottom = -35
+	end
 	section.Content = make("Frame", {
 		BackgroundTransparency = 1,
 		Position = UDim2.fromOffset(0, contentTop),
@@ -19122,8 +19136,12 @@ function Library:AddLabel(options: Options): Frame
 	local card = self:_card(options, options.Height or 44)
 	local mark = options.Icon and self:_addIcon(card, options.Icon, 16)
 	if mark then mark.Position = UDim2.fromOffset(14, 14) end
-	local labelLeft = if mark then 40 else 16
-	local labelWidth = if mark then -54 else -32
+	local labelLeft = 16
+	local labelWidth = -32
+	if mark then
+		labelLeft = 40
+		labelWidth = -54
+	end
 	local label = make("TextLabel", {
 		BackgroundTransparency = 1,
 		Font = Enum.Font.Gotham,
@@ -19144,7 +19162,7 @@ local function controlObject(library: any, card: Frame, key: string?, setter: (a
 	local control: any = {
 		Frame = card,
 		Key = key,
-		Default = if okInitial then initialValue else nil,
+		Default = (okInitial and initialValue or nil),
 		Set = function(_: any, value: any, silent: boolean?) setter(value, silent) end,
 		Get = function() return getter() end,
 		Reset = function(_: any, silent: boolean?)
@@ -19153,7 +19171,9 @@ local function controlObject(library: any, card: Frame, key: string?, setter: (a
 		SetEnabled = function(_: any, enabled: boolean)
 			card.Active = enabled
 			card.Selectable = enabled
-			card.BackgroundTransparency = if enabled then card.BackgroundTransparency else 0.35
+			if not enabled then
+				card.BackgroundTransparency = 0.35
+			end
 		end,
 		Destroy = function(_: any)
 			if card.Parent then card:Destroy() end
@@ -19187,10 +19207,14 @@ function Library:AddToggle(options: Options): Control
 	self:_theme(knob, "BackgroundColor3", "Muted")
 	local value = options.Default == true
 	local function render()
-		play(button, {BackgroundColor3 = if value then self.Theme.AccentDark else self.Theme.Surface3}, MOTION.Fast)
+		local buttonColor = self.Theme.Surface3
+		if value then
+			buttonColor = self.Theme.AccentDark
+		end
+		play(button, {BackgroundColor3 = buttonColor}, MOTION.Fast)
 		play(knob, {
-			BackgroundColor3 = if value then self.Theme.Accent else self.Theme.Muted,
-			Position = if value then UDim2.fromOffset(32, 4) else UDim2.fromOffset(4, 4),
+			BackgroundColor3 = (value and self.Theme.Accent or self.Theme.Muted),
+			Position = (value and UDim2.fromOffset(32, 4) or UDim2.fromOffset(4, 4)),
 		}, MOTION.Spring)
 	end
 	local function set(newValue: any, silent: boolean?)
@@ -19424,7 +19448,13 @@ function Library:AddMultiDropdown(options: Options): Control
 		self:_theme(check, "TextColor3", "Accent")
 		local itemLabel = make("TextLabel", {BackgroundTransparency = 1, Font = Enum.Font.Gotham, Position = UDim2.fromOffset(32, 0), Size = UDim2.new(1, -38, 1, 0), Text = tostring(itemValue), TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left}, item)
 		self:_theme(itemLabel, "TextColor3", "Muted")
-		local function renderItem() check.Text = if selected[itemValue] then "✓" else "" end end
+		local function renderItem()
+			if selected[itemValue] then
+				check.Text = "✓"
+			else
+				check.Text = ""
+			end
+		end
 		renderItem()
 		self:_connect(item.Activated, function() set(itemValue, false); renderItem() end)
 	end
@@ -19432,7 +19462,11 @@ function Library:AddMultiDropdown(options: Options): Control
 		open = not open
 		menu.Visible = open
 		card.Size = UDim2.new(1, 0, 0, open and 82 + #values * 28 or 78)
-		arrow.Rotation = if open then 180 else 0
+		if open then
+			arrow.Rotation = 180
+		else
+			arrow.Rotation = 0
+		end
 	end)
 	render()
 	return controlObject(self, card, options.ConfigKey or options.Name, set, function()
@@ -19486,7 +19520,15 @@ function Library:AddKeybind(options: Options): Control
 	self:_theme(button, "TextColor3", "Text")
 	local value = keyCode(options.Default or options.Key or "Unknown")
 	local listening = false
-	local function render() button.Text = if listening then "Press a key..." else (if value == Enum.KeyCode.Unknown then "Unbound" else value.Name) end end
+	local function render()
+		if listening then
+			button.Text = "Press a key..."
+		elseif value == Enum.KeyCode.Unknown then
+			button.Text = "Unbound"
+		else
+			button.Text = value.Name
+		end
+	end
 	local function set(newValue: any, silent: boolean?)
 		value = keyCode(newValue)
 		render()
@@ -19560,7 +19602,11 @@ function Library:AddColorPicker(options: Options): Control
 	end)
 	self:_connect(hex.FocusLost, function()
 		local newColor = hexToColor(hex.Text)
-		if newColor then set(newColor, false) else render() end
+		if newColor then
+			set(newColor, false)
+		else
+			render()
+		end
 	end)
 	render()
 	return controlObject(self, card, options.ConfigKey or options.Name, set, function() return value end)
@@ -19640,7 +19686,10 @@ function Library:ExportConfig(): string
 		if ok then data[key] = encodeConfig(value) end
 	end
 	local ok, result = pcall(function() return HttpService:JSONEncode(data) end)
-	return if ok then result else "{}"
+	if ok then
+		return result
+	end
+	return "{}"
 end
 
 function Library:ImportConfig(serialized: string, silent: boolean?): (boolean, string?)
@@ -19986,7 +20035,10 @@ end
 function Library:GetIcon(name: string): (string, string)
 	local asset = self:GetIconAsset(name)
 	local fallback = findIconAsset(LUCIDE_FALLBACK, name) or "•"
-	return if type(asset) == "string" then asset else "", fallback
+	if type(asset) == "string" then
+		return asset, fallback
+	end
+	return "", fallback
 end
 function Library:SetIconAssets(assets: {[string]: string}, replace: boolean?): self
 	if replace then self.IconAssets = {} end
@@ -20014,7 +20066,10 @@ function Library:ListIcons(): {string}
 end
 function Library:SetPerformanceProfile(profile: string): self
 	local requested = string.lower(tostring(profile or "PC"))
-	local name = if requested == "mobile" or requested == "phone" or requested == "touch" then "Mobile" else "PC"
+	local name = "PC"
+	if requested == "mobile" or requested == "phone" or requested == "touch" then
+		name = "Mobile"
+	end
 	local settings = PERFORMANCE_PROFILES[name]
 	self.PerformanceProfile = name
 	self._motionScale = settings.MotionScale
@@ -20161,7 +20216,10 @@ function Library:Pulse(object: GuiObject, property: string?, amount: number?, in
 	local targetProperty = property or "BackgroundTransparency"
 	local base = (object :: any)[targetProperty]
 	local change = amount or 0.12
-	local peak = if type(base) == "number" then clamp(base - change, 0, 1) else base
+	local peak = base
+	if type(base) == "number" then
+		peak = clamp(base - change, 0, 1)
+	end
 	local tween = self:Animate(object, {[targetProperty] = peak}, info or MOTION.Fast)
 	if tween then
 		self:TrackCleanup(tween.Completed:Connect(function()
@@ -20222,7 +20280,12 @@ function Library:EnableTouchFeedback(object: GuiObject): self
 		self:Hover(object, {BackgroundTransparency = 0.04}, {BackgroundTransparency = 0})
 	end
 	if object:IsA("GuiButton") then
-		local pressed = if self._inputMode == "Touch" then {BackgroundTransparency = 0.12} else {Size = object.Size}
+		local pressed
+		if self._inputMode == "Touch" then
+			pressed = {BackgroundTransparency = 0.12}
+		else
+			pressed = {Size = object.Size}
+		end
 		self:Press(object, pressed, {BackgroundTransparency = 0})
 	end
 	return self
@@ -20240,7 +20303,10 @@ function Library:GetBreakpoint(width: number?): string
 end
 function Library:GetViewport(): Vector2
 	local camera = workspace.CurrentCamera
-	return if camera then camera.ViewportSize else Vector2.new(900, 650)
+	if camera then
+		return camera.ViewportSize
+	end
+	return Vector2.new(900, 650)
 end
 function Library:OnBreakpointChanged(callback: (string, string) -> ()): RBXScriptConnection?
 	if not self._breakpointSignal then
@@ -20330,7 +20396,11 @@ function Library:GetNotificationLimit(): number
 	return self._notificationLimit
 end
 function Library:PauseNotifications(paused: boolean?): self
-	self._notificationPaused = if paused == nil then true else paused
+	if paused == nil then
+		self._notificationPaused = true
+	else
+		self._notificationPaused = paused
+	end
 	if not self._notificationPaused then self:_flushNotifications() end
 	return self
 end
@@ -20494,7 +20564,7 @@ function Library:OpenModal(options: Options): Frame
 	for index, buttonOptions in ipairs(buttons) do
 		local button = make("TextButton", {
 			AutoButtonColor = false,
-			BackgroundColor3 = if buttonOptions.Kind == "Primary" then self.Theme.AccentDark else self.Theme.Surface3,
+			BackgroundColor3 = (buttonOptions.Kind == "Primary" and self.Theme.AccentDark or self.Theme.Surface3),
 			BorderSizePixel = 0,
 			LayoutOrder = index,
 			Size = UDim2.fromOffset(buttonWidth, 32),
@@ -20503,9 +20573,16 @@ function Library:OpenModal(options: Options): Frame
 			ZIndex = 183,
 		}, footer)
 		rounded(button, 9)
-		self:_theme(button, "TextColor3", if buttonOptions.Kind == "Primary" then "Accent" else "Text")
+		local buttonTextKey = "Text"
+		if buttonOptions.Kind == "Primary" then
+			buttonTextKey = "Accent"
+		end
+		self:_theme(button, "TextColor3", buttonTextKey)
 		self:_connect(button.Activated, function()
-			local result = if type(buttonOptions.Callback) == "function" then buttonOptions.Callback(body, overlay) else nil
+			local result = nil
+			if type(buttonOptions.Callback) == "function" then
+				result = buttonOptions.Callback(body, overlay)
+			end
 			if buttonOptions.Close ~= false and result ~= false then self:CloseModal(overlay) end
 		end)
 		self:EnableTouchFeedback(button)
@@ -20623,7 +20700,10 @@ local function makeSectionIn(library: any, parent: Instance, tab: any, options: 
 		}, frame)
 		library:_theme(heading, "TextColor3", "Muted")
 	end
-	local top = if options.Title then 35 else 0
+	local top = 0
+	if options.Title then
+		top = 35
+	end
 	section.Content = make("Frame", {
 		BackgroundTransparency = 1,
 		Position = UDim2.fromOffset(0, top),
@@ -20854,7 +20934,11 @@ function Library:CloseCommandPalette(): self
 	return self
 end
 function Library:ToggleCommandPalette(): self
-	if self._commandPalette then self:CloseCommandPalette() else self:OpenCommandPalette() end
+	if self._commandPalette then
+		self:CloseCommandPalette()
+	else
+		self:OpenCommandPalette()
+	end
 	return self
 end
 function Library:AddProgress(options: Options): Control
@@ -21255,8 +21339,15 @@ function Library:AddToggleGroup(options: Options): {[string]: Control}
 	local result = {}
 	local values = options.Options or {}
 	for index, item in ipairs(values) do
-		local name = if type(item) == "table" then item.Name or item.Title else tostring(item)
-		local config = if type(item) == "table" then shallowCopy(item) else {Title = name}
+		local name
+		local config
+		if type(item) == "table" then
+			name = item.Name or item.Title
+			config = shallowCopy(item)
+		else
+			name = tostring(item)
+			config = {Title = name}
+		end
 		config.Name = config.Name or (options.Name and options.Name .. "_" .. name or name)
 		config.Default = config.Default == true or (options.Default == name)
 		config.Callback = function(value: boolean)
@@ -21406,8 +21497,13 @@ function NestedTab:AddPage(options: Options): any
 	local function select()
 		for _, item in ipairs(self.Pages) do
 			item.Frame.Visible = item == page
-			item.Button.BackgroundColor3 = if item == page then self.Library.Theme.AccentDark else self.Library.Theme.Surface2
-			item.Button.TextColor3 = if item == page then self.Library.Theme.Accent else self.Library.Theme.Muted
+			if item == page then
+				item.Button.BackgroundColor3 = self.Library.Theme.AccentDark
+				item.Button.TextColor3 = self.Library.Theme.Accent
+			else
+				item.Button.BackgroundColor3 = self.Library.Theme.Surface2
+				item.Button.TextColor3 = self.Library.Theme.Muted
+			end
 		end
 		self.Selected = page
 	end
