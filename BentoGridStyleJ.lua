@@ -18816,7 +18816,7 @@ function Library.new(options: Options?): any
 		AnchorPoint = Vector2.new(1, 0),
 		BackgroundColor3 = self.Theme.Background,
 		BorderSizePixel = 0,
-		ClipsDescendants = true,
+		ClipsDescendants = false,
 		Name = "Window",
 		Position = UDim2.new(1, -22, 0, 22),
 		Size = UDim2.fromOffset(self._targetWidth, self._targetHeight),
@@ -18892,20 +18892,20 @@ function Library.new(options: Options?): any
 
 	local tabsBar = make("ScrollingFrame", {
 		Active = true,
-		AutomaticCanvasSize = Enum.AutomaticSize.X,
+		AutomaticCanvasSize = Enum.AutomaticSize.Y,
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
 		CanvasSize = UDim2.fromOffset(0, 0),
 		Name = "Tabs",
-		Position = UDim2.fromOffset(16, 68),
-		Size = UDim2.new(1, -32, 0, 36),
+		Position = UDim2.fromOffset(12, 78),
+		Size = UDim2.new(0, 142, 1, -92),
 		ScrollBarImageTransparency = 1,
 		ScrollBarThickness = 0,
 		Visible = false,
 	}, window)
 	self._tabsBar = tabsBar
 	local tabsLayout = make("UIListLayout", {
-		FillDirection = Enum.FillDirection.Horizontal,
+		FillDirection = Enum.FillDirection.Vertical,
 		Padding = UDim.new(0, 6),
 		SortOrder = Enum.SortOrder.LayoutOrder,
 	}, tabsBar)
@@ -18913,11 +18913,11 @@ function Library.new(options: Options?): any
 	local content = make("Frame", {
 		BackgroundTransparency = 1,
 		Name = "ContentHost",
-		Position = UDim2.fromOffset(0, 68),
-		Size = UDim2.new(1, 0, 1, -68),
+		Position = UDim2.fromOffset(166, 78),
+		Size = UDim2.new(1, -178, 1, -92),
 	}, window)
 	self._contentHost = content
-	self._contentTop = 68
+	self._contentTop = 78
 
 	local dragFooter = make("TextButton", {
 		Active = true,
@@ -19064,19 +19064,19 @@ function Library:AddTab(options: Options): any
 		BackgroundColor3 = self.Theme.Surface2,
 		BorderSizePixel = 0,
 		LayoutOrder = tab.LayoutOrder,
-		Size = UDim2.fromOffset(108, 32),
+		Size = UDim2.new(1, -6, 0, 34),
 		Text = "",
 	}, self._tabsBar)
 	rounded(button, 10)
 	tab.Button = button
 	self:_theme(button, "BackgroundColor3", "Surface2")
 	local tabIcon = self:_addIcon(button, tab.IconName, 15)
-	tabIcon.Position = UDim2.fromOffset(10, 8)
+	tabIcon.Position = UDim2.fromOffset(10, 9)
 	local tabLabel = make("TextLabel", {
 		BackgroundTransparency = 1,
 		Font = Enum.Font.GothamMedium,
-		Position = UDim2.fromOffset(31, 0),
-		Size = UDim2.new(1, -38, 1, 0),
+		Position = UDim2.fromOffset(33, 0),
+		Size = UDim2.new(1, -40, 1, 0),
 		Text = tab.Name,
 		TextSize = 12,
 		TextXAlignment = Enum.TextXAlignment.Left,
@@ -19115,12 +19115,10 @@ function Library:AddTab(options: Options): any
 	self:_connect(button.MouseLeave, function()
 		if not tab._selected then play(button, {BackgroundColor3 = self.Theme.Surface2}, MOTION.Smooth) end
 	end)
-	self._tabsBar.Visible = #self._tabs > 1
-	if #self._tabs > 1 then
-		self._contentTop = 110
-		self._contentHost.Position = UDim2.fromOffset(0, self._contentTop)
-		self._contentHost.Size = UDim2.new(1, 0, 1, -self._contentTop)
-	end
+	self._tabsBar.Visible = #self._tabs > 0
+	self._contentTop = 78
+	self._contentHost.Position = UDim2.fromOffset(166, self._contentTop)
+	self._contentHost.Size = UDim2.new(1, -178, 1, -92)
 	if options.Hidden ~= true or #self._tabs == 1 then
 		self:SelectTab(tab)
 	end
@@ -19190,11 +19188,19 @@ function Library:_card(options: Options, height: number?): Frame
 end
 
 function Library:_heading(card: Frame, options: Options, y: number?, showDescription: boolean?): (TextLabel, TextLabel?)
+	local titleLeft = 16
+	local titleWidth = -32
+	if options.Icon then
+		local mark = self:_addIcon(card, options.Icon, 17)
+		mark.Position = UDim2.fromOffset(16, (y or 14) + 1)
+		titleLeft = 40
+		titleWidth = -56
+	end
 	local title = make("TextLabel", {
 		BackgroundTransparency = 1,
 		Font = Enum.Font.GothamMedium,
-		Position = UDim2.fromOffset(16, y or 14),
-		Size = UDim2.new(1, -32, 0, 20),
+		Position = UDim2.fromOffset(titleLeft, y or 14),
+		Size = UDim2.new(1, titleWidth, 0, 20),
 		Text = options.Title or options.Name or "Untitled",
 		TextSize = 14,
 		TextXAlignment = Enum.TextXAlignment.Left,
@@ -19213,10 +19219,6 @@ function Library:_heading(card: Frame, options: Options, y: number?, showDescrip
 			TextXAlignment = Enum.TextXAlignment.Left,
 		}, card)
 		self:_theme(description, "TextColor3", "Muted")
-	end
-	if options.Icon then
-		local mark = self:_addIcon(card, options.Icon, 17)
-		mark.Position = UDim2.new(1, -34, 0, (y or 14) + 1)
 	end
 	return title, description
 end
@@ -19270,11 +19272,19 @@ function Library:_makeSection(tab: any, options: Options): any
 	}, tab.Page)
 	section.Frame = frame
 	if options.Title then
+		local titleLeft = 2
+		local titleWidth = -4
+		if options.Icon then
+			local mark = self:_addIcon(frame, options.Icon, 15)
+			mark.Position = UDim2.fromOffset(2, 12)
+			titleLeft = 24
+			titleWidth = -28
+		end
 		local label = make("TextLabel", {
 			BackgroundTransparency = 1,
 			Font = Enum.Font.GothamSemibold,
-			Position = UDim2.fromOffset(2, 10),
-			Size = UDim2.new(1, -4, 0, 20),
+			Position = UDim2.fromOffset(titleLeft, 10),
+			Size = UDim2.new(1, titleWidth, 0, 20),
 			Text = options.Title,
 			TextSize = 13,
 			TextXAlignment = Enum.TextXAlignment.Left,
@@ -19534,7 +19544,7 @@ function Library:AddDropdown(options: Options): Control
 	self:_theme(selectedLabel, "TextColor3", "Text")
 	local arrow = self:_addIcon(button, "ChevronDown", 16)
 	arrow.Position = UDim2.new(1, -25, 0, 6)
-	local menu = make("Frame", {BackgroundColor3 = self.Theme.Surface2, BorderSizePixel = 0, Position = UDim2.fromOffset(16, 72), Size = UDim2.new(1, -32, 0, 0), Visible = false}, card)
+	local menu = make("Frame", {BackgroundColor3 = self.Theme.Surface2, BorderSizePixel = 0, Position = UDim2.fromOffset(16, 72), Size = UDim2.new(1, -32, 0, #values * 36 + 12), Visible = false, ZIndex = 20}, card)
 	rounded(menu, 8)
 	stroked(menu, self.Theme.Stroke, 0.35)
 	self:_theme(menu, "BackgroundColor3", "Surface2")
@@ -19545,7 +19555,7 @@ function Library:AddDropdown(options: Options): Control
 	local value: any = options.Default
 	local function display()
 		if value == nil or value == "" then
-			selectedLabel.Text = options.Placeholder or "Select an option"
+			selectedLabel.Text = options.Placeholder or "Click To Select"
 		else
 			selectedLabel.Text = tostring(value)
 		end
@@ -19561,7 +19571,6 @@ function Library:AddDropdown(options: Options): Control
 	local function setOpen(newOpen: boolean)
 		open = newOpen
 		menu.Visible = open
-		card.Size = UDim2.new(1, 0, 0, open and 82 + #values * 36 or 78)
 		if open then
 			arrow.Rotation = 180
 		else
@@ -19578,6 +19587,7 @@ function Library:AddDropdown(options: Options): Control
 			Text = tostring(candidate),
 			TextSize = 12,
 			TextXAlignment = Enum.TextXAlignment.Left,
+			ZIndex = 21,
 		}, menu)
 		rounded(item, 7)
 		stroked(item, self.Theme.Stroke, 0.35)
@@ -19604,7 +19614,7 @@ function Library:AddMultiDropdown(options: Options): Control
 	self:_theme(label, "TextColor3", "Text")
 	local arrow = self:_addIcon(button, "ChevronDown", 16)
 	arrow.Position = UDim2.new(1, -25, 0, 6)
-	local menu = make("Frame", {BackgroundColor3 = self.Theme.Surface2, BorderSizePixel = 0, Position = UDim2.fromOffset(16, 72), Size = UDim2.new(1, -32, 0, 0), Visible = false}, card)
+	local menu = make("Frame", {BackgroundColor3 = self.Theme.Surface2, BorderSizePixel = 0, Position = UDim2.fromOffset(16, 72), Size = UDim2.new(1, -32, 0, #values * 36 + 12), Visible = false, ZIndex = 20}, card)
 	rounded(menu, 8)
 	self:_theme(menu, "BackgroundColor3", "Surface2")
 	local selected: {[any]: boolean} = {}
@@ -19613,7 +19623,7 @@ function Library:AddMultiDropdown(options: Options): Control
 		local names = {}
 		for _, item in ipairs(values) do if selected[item] then table.insert(names, tostring(item)) end end
 		if #names == 0 then
-			label.Text = options.Placeholder or "Select options"
+			label.Text = options.Placeholder or "Click To Select"
 		else
 			label.Text = table.concat(names, ", ")
 		end
@@ -19640,13 +19650,14 @@ function Library:AddMultiDropdown(options: Options): Control
 			Size = UDim2.new(1, 0, 0, 30),
 			Text = "",
 			TextXAlignment = Enum.TextXAlignment.Left,
+			ZIndex = 21,
 		}, menu)
 		rounded(item, 7)
 		stroked(item, self.Theme.Stroke, 0.35)
 		self:_theme(item, "BackgroundColor3", "Surface3")
-		local check = make("TextLabel", {BackgroundTransparency = 1, Font = Enum.Font.GothamMedium, Position = UDim2.fromOffset(10, 0), Size = UDim2.fromOffset(22, 30), TextSize = 14, TextXAlignment = Enum.TextXAlignment.Left}, item)
+		local check = make("TextLabel", {BackgroundTransparency = 1, Font = Enum.Font.GothamMedium, Position = UDim2.fromOffset(10, 0), Size = UDim2.fromOffset(22, 30), TextSize = 14, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 22}, item)
 		self:_theme(check, "TextColor3", "Accent")
-		local itemLabel = make("TextLabel", {BackgroundTransparency = 1, Font = Enum.Font.Gotham, Position = UDim2.fromOffset(38, 0), Size = UDim2.new(1, -48, 1, 0), Text = tostring(itemValue), TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left}, item)
+		local itemLabel = make("TextLabel", {BackgroundTransparency = 1, Font = Enum.Font.Gotham, Position = UDim2.fromOffset(38, 0), Size = UDim2.new(1, -48, 1, 0), Text = tostring(itemValue), TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 22}, item)
 		self:_theme(itemLabel, "TextColor3", "Muted")
 		local function renderItem()
 			if selected[itemValue] then
@@ -19661,7 +19672,6 @@ function Library:AddMultiDropdown(options: Options): Control
 	self:_connect(button.Activated, function()
 		open = not open
 		menu.Visible = open
-		card.Size = UDim2.new(1, 0, 0, open and 82 + #values * 36 or 78)
 		if open then
 			arrow.Rotation = 180
 		else
@@ -19756,7 +19766,7 @@ function Library:AddColorPicker(options: Options): Control
 	local swatch = make("TextButton", {AutoButtonColor = false, BackgroundColor3 = options.Default or Color3.fromRGB(205, 219, 255), BorderSizePixel = 0, Position = UDim2.new(1, -58, 0, 12), Size = UDim2.fromOffset(42, 42), Text = ""}, card)
 	rounded(swatch, 10)
 	stroked(swatch, self.Theme.Stroke, 0.15)
-	local popup = make("Frame", {BackgroundColor3 = self.Theme.Surface2, BorderSizePixel = 0, Position = UDim2.fromOffset(16, 64), Size = UDim2.new(1, -32, 0, 0), Visible = false}, card)
+	local popup = make("Frame", {BackgroundColor3 = self.Theme.Surface2, BorderSizePixel = 0, Position = UDim2.fromOffset(16, 64), Size = UDim2.new(1, -32, 0, 72), Visible = false, ZIndex = 20}, card)
 	rounded(popup, 10)
 	stroked(popup, self.Theme.Stroke, 0.3)
 	self:_theme(popup, "BackgroundColor3", "Surface2")
@@ -19789,7 +19799,6 @@ function Library:AddColorPicker(options: Options): Control
 	self:_connect(swatch.Activated, function()
 		open = not open
 		popup.Visible = open
-		card.Size = UDim2.new(1, 0, 0, open and 142 or 78)
 	end)
 	self:_connect(hueTrack.InputBegan, function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then sliding = true; hueFromInput(input) end
@@ -21374,8 +21383,10 @@ function Library:SetWindowSize(width: number, height: number): self
 end
 function Library:SetWindowPadding(padding: number): self
 	if self._contentHost then
-		self._contentHost.Position = UDim2.fromOffset(padding, self._contentTop or 8)
-		self._contentHost.Size = UDim2.new(1, -padding * 2, 1, -(self._contentTop or 8) - padding)
+		local left = 166 + padding - 16
+		local top = self._contentTop or 78
+		self._contentHost.Position = UDim2.fromOffset(left, top)
+		self._contentHost.Size = UDim2.new(1, -left - padding, 1, -top - padding)
 	end
 	return self
 end
@@ -21834,7 +21845,7 @@ function Library:RemoveTab(tabOrName: any): boolean
 			if tab.Button.Parent then tab.Button:Destroy() end
 			table.remove(self._tabs, index)
 			if self._activeTab == tab then self._activeTab = self._tabs[math.max(1, index - 1)]; if self._activeTab then self:SelectTab(self._activeTab) end end
-			self._tabsBar.Visible = #self._tabs > 1
+			self._tabsBar.Visible = #self._tabs > 0
 			return true
 		end
 	end
