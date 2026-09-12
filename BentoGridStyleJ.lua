@@ -18356,6 +18356,19 @@ local function play(object: Instance, properties: {[string]: any}, info: TweenIn
 	return nil
 end
 
+local function visualFeedback(properties: {[string]: any}): {[string]: any}
+	local result: {[string]: any} = {}
+	for property, value in pairs(properties) do
+		if property ~= "Size"
+			and property ~= "Position"
+			and property ~= "AnchorPoint"
+			and property ~= "Rotation" then
+			result[property] = value
+		end
+	end
+	return result
+end
+
 local function clamp(value: number, minimum: number, maximum: number): number
 	return math.max(minimum, math.min(maximum, value))
 end
@@ -18612,27 +18625,27 @@ function Library:_setWindowPosition()
 		local y = clamp(self.Window.Position.Y.Offset, 14, math.max(14, viewport.Y - height - 14))
 		self.Window.Position = UDim2.new(1, x, 0, y)
 	end
+end
 
-	function Library:_updateHandlePositions()
-		if not self.Window or not self.Window.Parent then
-			return
-		end
-		if self.DragFooter and self.DragFooter.Parent then
-			local position = self.Window.AbsolutePosition
-			local size = self.Window.AbsoluteSize
-			self.DragFooter.Position = UDim2.fromOffset(
-				position.X + math.floor(size.X / 2) - math.floor(self.DragFooter.AbsoluteSize.X / 2),
-				position.Y + size.Y + 8
-			)
-		end
-		if self.ResizeGrip and self.ResizeGrip.Parent then
-			local position = self.Window.AbsolutePosition
-			local size = self.Window.AbsoluteSize
-			self.ResizeGrip.Position = UDim2.fromOffset(
-				position.X + size.X - self.ResizeGrip.AbsoluteSize.X - 2,
-				position.Y + size.Y + 4
-			)
-		end
+function Library:_updateHandlePositions()
+	if not self.Window or not self.Window.Parent then
+		return
+	end
+	if self.DragFooter and self.DragFooter.Parent then
+		local position = self.Window.AbsolutePosition
+		local size = self.Window.AbsoluteSize
+		self.DragFooter.Position = UDim2.fromOffset(
+			position.X + math.floor(size.X / 2) - math.floor(self.DragFooter.AbsoluteSize.X / 2),
+			position.Y + size.Y + 8
+		)
+	end
+	if self.ResizeGrip and self.ResizeGrip.Parent then
+		local position = self.Window.AbsolutePosition
+		local size = self.Window.AbsoluteSize
+		self.ResizeGrip.Position = UDim2.fromOffset(
+			position.X + size.X - self.ResizeGrip.AbsoluteSize.X - 2,
+			position.Y + size.Y + 4
+		)
 	end
 end
 
@@ -18643,43 +18656,6 @@ local function draggable(library: any, target: GuiObject, handle: GuiObject)
 	library:_connect(handle.InputBegan, function(input: InputObject)
 		if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then
 			return
-		end
-
-		local function resizable(library: any, target: GuiObject, handle: GuiObject)
-			local resizing = false
-			local startInput: Vector3? = nil
-			local startWidth = 0
-			local startHeight = 0
-			library:_connect(handle.InputBegan, function(input: InputObject)
-				if input.UserInputType ~= Enum.UserInputType.MouseButton1
-					and input.UserInputType ~= Enum.UserInputType.Touch then
-					return
-				end
-				resizing = true
-				startInput = input.Position
-				startWidth = target.AbsoluteSize.X
-				startHeight = target.AbsoluteSize.Y
-				library:_connect(input.Changed, function()
-					if input.UserInputState == Enum.UserInputState.End then
-						resizing = false
-						startInput = nil
-					end
-				end)
-			end)
-			library:_connect(UserInputService.InputChanged, function(input: InputObject)
-				if not resizing or not startInput then
-					return
-				end
-				if input.UserInputType ~= Enum.UserInputType.MouseMovement
-					and input.UserInputType ~= Enum.UserInputType.Touch then
-					return
-				end
-				local delta = input.Position - startInput
-				library._targetWidth = clamp(startWidth + delta.X, 420, 1100)
-				library._targetHeight = clamp(startHeight + delta.Y, 320, 850)
-				library:_resize()
-				library:_updateHandlePositions()
-			end)
 		end
 		dragging = true
 		startInput = input.Position
@@ -18703,6 +18679,43 @@ local function draggable(library: any, target: GuiObject, handle: GuiObject)
 			startPosition.Y.Scale, startPosition.Y.Offset + delta.Y
 		)
 		library:_setWindowPosition()
+		library:_updateHandlePositions()
+	end)
+end
+
+local function resizable(library: any, target: GuiObject, handle: GuiObject)
+	local resizing = false
+	local startInput: Vector3? = nil
+	local startWidth = 0
+	local startHeight = 0
+	library:_connect(handle.InputBegan, function(input: InputObject)
+		if input.UserInputType ~= Enum.UserInputType.MouseButton1
+			and input.UserInputType ~= Enum.UserInputType.Touch then
+			return
+		end
+		resizing = true
+		startInput = input.Position
+		startWidth = target.AbsoluteSize.X
+		startHeight = target.AbsoluteSize.Y
+		library:_connect(input.Changed, function()
+			if input.UserInputState == Enum.UserInputState.End then
+				resizing = false
+				startInput = nil
+			end
+		end)
+	end)
+	library:_connect(UserInputService.InputChanged, function(input: InputObject)
+		if not resizing or not startInput then
+			return
+		end
+		if input.UserInputType ~= Enum.UserInputType.MouseMovement
+			and input.UserInputType ~= Enum.UserInputType.Touch then
+			return
+		end
+		local delta = input.Position - startInput
+		library._targetWidth = clamp(startWidth + delta.X, 420, 1100)
+		library._targetHeight = clamp(startHeight + delta.Y, 320, 850)
+		library:_resize()
 		library:_updateHandlePositions()
 	end)
 end
@@ -18819,7 +18832,7 @@ function Library.new(options: Options?): any
 		BackgroundTransparency = 1,
 		Name = "Topbar",
 		Size = UDim2.new(1, 0, 0, 68),
-	}, gui)
+	}, window)
 	local topLogo = makeLogo(topbar, self._title, self.Theme.Accent)
 	topLogo.Position = UDim2.fromOffset(18, 15)
 	local title = make("TextLabel", {
@@ -19374,10 +19387,10 @@ function Library:AddToggle(options: Options): Control
 			buttonColor = self.Theme.AccentDark
 		end
 		play(button, {BackgroundColor3 = buttonColor}, MOTION.Fast)
-		play(knob, {
+		play(knob, visualFeedback({
 			BackgroundColor3 = (value and self.Theme.Accent or self.Theme.Muted),
-			Position = (value and UDim2.fromOffset(32, 4) or UDim2.fromOffset(4, 4)),
-		}, MOTION.Spring)
+		}), MOTION.Fast)
+		knob.Position = value and UDim2.fromOffset(32, 4) or UDim2.fromOffset(4, 4)
 	end
 	local function set(newValue: any, silent: boolean?)
 		value = newValue == true
@@ -20437,10 +20450,10 @@ end
 function Library:Hover(object: GuiObject, enter: Options, leave: Options?): self
 	local exitStyle = leave or {}
 	self:_connect(object.MouseEnter, function()
-		if object.Parent then self:Animate(object, enter, MOTION.Fast) end
+		if object.Parent then self:Animate(object, visualFeedback(enter), MOTION.Fast) end
 	end)
 	self:_connect(object.MouseLeave, function()
-		if object.Parent then self:Animate(object, exitStyle, MOTION.Smooth) end
+		if object.Parent then self:Animate(object, visualFeedback(exitStyle), MOTION.Smooth) end
 	end)
 	return self
 end
@@ -20448,12 +20461,12 @@ function Library:Press(object: GuiButton, pressed: Options, released: Options?):
 	local releaseStyle = released or {}
 	self:_connect(object.InputBegan, function(input: InputObject)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			self:Animate(object, pressed, MOTION.Fast)
+			self:Animate(object, visualFeedback(pressed), MOTION.Fast)
 		end
 	end)
 	self:_connect(object.InputEnded, function(input: InputObject)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			self:Animate(object, releaseStyle, MOTION.Fast)
+			self:Animate(object, visualFeedback(releaseStyle), MOTION.Fast)
 		end
 	end)
 	return self
@@ -20467,12 +20480,7 @@ function Library:EnableTouchFeedback(object: GuiObject): self
 		self:Hover(object, {BackgroundTransparency = 0.04}, {BackgroundTransparency = 0})
 	end
 	if object:IsA("GuiButton") then
-		local pressed
-		if self._inputMode == "Touch" then
-			pressed = {BackgroundTransparency = 0.12}
-		else
-			pressed = {Size = object.Size}
-		end
+		local pressed = {BackgroundTransparency = 0.12}
 		self:Press(object, pressed, {BackgroundTransparency = 0})
 	end
 	return self
