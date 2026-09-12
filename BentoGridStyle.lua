@@ -1,6 +1,7 @@
 -- Khfresh BentoGridStyle
 -- Dedicated UI library for Khfresh Hub.
 -- Icons are stored as original packed 24x24 alpha bitmaps generated for this library.
+-- EditableImage is the smooth renderer; a compact 8x8 pixel fallback is used only when unavailable.
 
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
@@ -152,7 +153,7 @@ local function isMobile()
 end
 
 -- ============================================================
--- ORIGINAL PACKED PIXEL ICON DATA
+-- KHfresh dedicated packed bitmap icon set (generated independently)
 -- ============================================================
 local PACKED_ICONS = {
     ["x"] = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAbN1zAAAAAAAAAAAAAAAAAHPdbAAAAAAB3f/+egAAAAAAAAAAAAAAev7/3QEAAAAAc/7//noAAAAAAAAAAAB6/v/+cwAAAAAAAHr+//56AAAAAAAAAHr+//56AAAAAAAAAAB6/v/+egAAAAAAev7//noAAAAAAAAAAAAAev7//noAAAB6/v/+egAAAAAAAAAAAAAAAHr+//56AXr+//56AAAAAAAAAAAAAAAAAAB6/v/+uf7//noAAAAAAAAAAAAAAAAAAAAAev7////+egAAAAAAAAAAAAAAAAAAAAAAAbn///+5AQAAAAAAAAAAAAAAAAAAAAAAev7////+egAAAAAAAAAAAAAAAAAAAAB6/v/+uf7//noAAAAAAAAAAAAAAAAAAHr+//56AXr+//56AAAAAAAAAAAAAAAAev7//noAAAB6/v/+egAAAAAAAAAAAAB6/v/+egAAAAAAev7//noAAAAAAAAAAHr+//56AAAAAAAAAHr+//56AAAAAAAAc/7//noAAAAAAAAAAAB6/v/+cwAAAAAB3f/+egAAAAAAAAAAAAAAev7/3QEAAAAAbN1zAAAAAAAAAAAAAAAAAHPdbAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
@@ -242,41 +243,40 @@ local function fallbackPixelIcon(parent, name, position, size, color, z)
         Position = position or UDim2.fromOffset(0, 0), Size = size or UDim2.fromOffset(20, 20),
         ZIndex = z or 5,
     }, parent)
-    local data = decodePacked(PACKED_ICONS[normalizeIconName(name)] or PACKED_ICONS.circle or "")
-    if #data == 0 then return holder end
-    -- Compact 8x8 fallback: average each 3x3 source block.
-    -- This keeps unsupported environments lightweight instead of creating hundreds of Frames per icon.
-    local cells = 8
-    local cellAlpha = {}
-    for gy = 0, cells - 1 do
-        for gx = 0, cells - 1 do
-            local sum = 0
-            local count = 0
-            local sx0 = math.floor(gx * 24 / cells)
-            local sx1 = math.max(sx0, math.floor((gx + 1) * 24 / cells) - 1)
-            local sy0 = math.floor(gy * 24 / cells)
-            local sy1 = math.max(sy0, math.floor((gy + 1) * 24 / cells) - 1)
-            for sy = sy0, sy1 do
-                for sx = sx0, sx1 do
-                    sum = sum + (string.byte(data, sy * 24 + sx + 1) or 0)
+    local data = decodePacked(PACKED_ICONS[normalizeIconName(name)] or PACKED_ICONS["circle-check"] or "")
+    if #data < 576 then return holder end
+
+    -- Lightweight raster fallback: compress each bitmap row into contiguous alpha runs.
+    -- This preserves anti-aliased alpha without creating a 24x24 Frame grid.
+    for y = 0, 23 do
+        local x = 0
+        while x < 24 do
+            local a = string.byte(data, y * 24 + x + 1) or 0
+            if a > 10 then
+                local startX = x
+                local sum = a
+                local count = 1
+                x = x + 1
+                while x < 24 do
+                    local nextA = string.byte(data, y * 24 + x + 1) or 0
+                    if nextA <= 10 then break end
+                    sum = sum + nextA
                     count = count + 1
+                    x = x + 1
                 end
-            end
-            cellAlpha[gy * cells + gx + 1] = count > 0 and math.floor(sum / count) or 0
-        end
-    end
-    for gy = 0, cells - 1 do
-        for gx = 0, cells - 1 do
-            local a = cellAlpha[gy * cells + gx + 1] or 0
-            if a > 18 then
-                make("Frame", {
+                local avg = sum / count
+                local alphaTransparency = 1 - math.clamp(avg / 255, 0, 1)
+                local pixel = make("Frame", {
                     BackgroundColor3 = color or C.muted,
-                    BackgroundTransparency = 1 - (a / 255),
+                    BackgroundTransparency = alphaTransparency,
                     BorderSizePixel = 0,
-                    Position = UDim2.new(gx / cells, 0, gy / cells, 0),
-                    Size = UDim2.new(1 / cells, 0, 1 / cells, 0),
+                    Position = UDim2.new(startX / 24, 0, y / 24, 0),
+                    Size = UDim2.new(count / 24, 0, 1 / 24, 0),
                     ZIndex = z or 5,
                 }, holder)
+                pixel:SetAttribute("KhfreshOriginalTransparency", alphaTransparency)
+            else
+                x = x + 1
             end
         end
     end
@@ -318,8 +318,9 @@ local function packedIcon(parent, name, position, size, color, z)
             local contentValue = nil
             if wrote then
                 pcall(function()
-                    if Content and type(Content.fromObject) == "function" then
-                        contentValue = Content.fromObject(editable)
+                    local contentType = rawget(_G, "Content")
+                    if contentType and type(contentType.fromObject) == "function" then
+                        contentValue = contentType.fromObject(editable)
                     end
                 end)
             end
@@ -372,9 +373,9 @@ local function updateSectionHeight(section)
     section._frame.Size = UDim2.new(1, 0, 0, 45 + bodyH + 12)
 end
 
-local function updateColumnHeight(column)
-    if not column or not column._layout then return end
-    column.Size = UDim2.new(column.Size.X.Scale, column.Size.X.Offset, 0, column._layout.AbsoluteContentSize.Y)
+local function updateColumnHeight(column, layout)
+    if not column or not layout then return end
+    column.Size = UDim2.new(column.Size.X.Scale, column.Size.X.Offset, 0, layout.AbsoluteContentSize.Y)
 end
 
 local function buildSectionHost(tab)
@@ -400,17 +401,15 @@ local function buildSectionHost(tab)
         }, tab._grid)
         tab._leftLayout = list(tab._left, 10)
         tab._rightLayout = list(tab._right, 10)
-        tab._left._layout = tab._leftLayout
-        tab._right._layout = tab._rightLayout
-        tab._grid._settingsLayoutConnection = tab._leftLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-            updateColumnHeight(tab._left)
-            updateColumnHeight(tab._right)
+        tab._settingsLeftConn = tab._leftLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+            updateColumnHeight(tab._left, tab._leftLayout)
+            updateColumnHeight(tab._right, tab._rightLayout)
             local h = math.max(tab._leftLayout.AbsoluteContentSize.Y, tab._rightLayout.AbsoluteContentSize.Y)
             tab._grid.Size = UDim2.new(1, 0, 0, h)
         end)
-        tab._rightLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-            updateColumnHeight(tab._left)
-            updateColumnHeight(tab._right)
+        tab._settingsRightConn = tab._rightLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+            updateColumnHeight(tab._left, tab._leftLayout)
+            updateColumnHeight(tab._right, tab._rightLayout)
             local h = math.max(tab._leftLayout.AbsoluteContentSize.Y, tab._rightLayout.AbsoluteContentSize.Y)
             tab._grid.Size = UDim2.new(1, 0, 0, h)
         end)
@@ -471,8 +470,8 @@ end
 local function clampWindowSize(requested)
     local vp = getViewport()
     local mobile = isMobile()
-    local minW = mobile and 300 or 540
-    local minH = mobile and 360 or 430
+    local minW = mobile and 292 or 540
+    local minH = mobile and 350 or 430
     local maxW = math.max(minW, vp.X - (mobile and 10 or 28))
     local maxH = math.max(minH, vp.Y - (mobile and 10 or 28))
     local w = requested and requested.X.Offset or 760
@@ -537,8 +536,8 @@ local function installResize(win)
         local d = input.Position - startInput
         local vp = getViewport()
         local mobile = isMobile()
-        local minW = mobile and 300 or 540
-        local minH = mobile and 360 or 430
+        local minW = mobile and 292 or 540
+        local minH = mobile and 350 or 430
         local maxW = math.max(minW, vp.X - (mobile and 8 or 20))
         local maxH = math.max(minH, vp.Y - (mobile and 8 or 20))
         local w = math.clamp(startSize.X + d.X, minW, maxW)
@@ -559,7 +558,7 @@ function Window:_refreshLayout()
     self._content.Position = UDim2.fromOffset(mobile and 64 or self._railWidth, topH)
     self._content.Size = UDim2.new(1, -(mobile and 64 or self._railWidth), 1, -topH)
     self._dragHandle.Position = UDim2.new(0.5, -80, 1, -20)
-    self._dragHandle.Size = UDim2.fromOffset(160, 16)
+    self._dragHandle.Size = UDim2.fromOffset(190, 20)
     self._logoHolder.Size = UDim2.fromOffset(mobile and 46 or 54, mobile and 46 or 54)
     self._logoHolder.Position = UDim2.fromOffset(12, mobile and 9 or 14)
     if self._logo then
@@ -567,8 +566,8 @@ function Window:_refreshLayout()
     end
     self._brandText.Visible = not mobile
     self._authorText.Visible = not mobile
-    self._minBtn.Position = UDim2.new(1, mobile and -104 or -104, 0, 20)
-    self._closeBtn.Position = UDim2.new(1, -54, 0, 20)
+    self._minBtn.Position = UDim2.new(1, mobile and -84 or -86, 0, mobile and 17 or 24)
+    self._closeBtn.Position = UDim2.new(1, mobile and -44 or -44, 0, mobile and 17 or 24)
     for _, tab in ipairs(self._tabs) do
         tab._label.Visible = not mobile
         tab._btn.Size = UDim2.new(1, 0, 0, mobile and 46 or 48)
@@ -630,11 +629,11 @@ function UI:CreateWindow(config)
         win._background = make("ImageLabel", {
             Name = "Background", BackgroundTransparency = 1, BorderSizePixel = 0,
             Size = UDim2.fromScale(1, 1), Image = config.Background,
-            ImageTransparency = tonumber(config.BackgroundImageTransparency) or 0.50,
+            ImageTransparency = tonumber(config.BackgroundImageTransparency) or 0.42,
             ScaleType = Enum.ScaleType.Crop, ZIndex = 0,
         }, shell)
         win._backgroundTint = make("Frame", {
-            Name = "BackgroundTint", BackgroundColor3 = C.canvas, BackgroundTransparency = 0.58,
+            Name = "BackgroundTint", BackgroundColor3 = Color3.fromRGB(8, 10, 14), BackgroundTransparency = 0.74,
             BorderSizePixel = 0, Size = UDim2.fromScale(1, 1), ZIndex = 1,
         }, shell)
     end
@@ -646,14 +645,18 @@ function UI:CreateWindow(config)
     corner(top, 22); win._top = top
 
     win._logoHolder = make("Frame", {
-        Name = "LogoHolder", BackgroundColor3 = C.accentSoft, BorderSizePixel = 0,
+        Name = "LogoHolder", BackgroundColor3 = C.row, BorderSizePixel = 0,
         Position = UDim2.fromOffset(14, 14), Size = UDim2.fromOffset(54, 54), ZIndex = 22,
     }, top)
     corner(win._logoHolder, 16)
+    win._logoFallback = text(win._logoHolder, "K", 28, C.secondary, true)
+    win._logoFallback.Size = UDim2.fromScale(1, 1)
+    win._logoFallback.TextXAlignment = Enum.TextXAlignment.Center
+    win._logoFallback.ZIndex = 23
     if type(config.Logo) == "string" and config.Logo ~= "" then
-        win._logo = make("ImageLabel", {BackgroundTransparency = 1, BorderSizePixel = 0, Size = UDim2.fromScale(1, 1), Image = config.Logo, ScaleType = Enum.ScaleType.Fit, ZIndex = 23}, win._logoHolder)
+        win._logo = make("ImageLabel", {BackgroundTransparency = 1, BorderSizePixel = 0, Size = UDim2.fromScale(1, 1), Image = config.Logo, ScaleType = Enum.ScaleType.Fit, ZIndex = 24, ImageTransparency = 0}, win._logoHolder)
     else
-        win._logo = packedIcon(win._logoHolder, config.Icon or "layout-dashboard", UDim2.fromOffset(16, 16), UDim2.fromOffset(22, 22), C.accent, 23)
+        win._logo = packedIcon(win._logoHolder, config.Icon or "layout-dashboard", UDim2.fromOffset(16, 16), UDim2.fromOffset(22, 22), C.secondary, 24)
     end
 
     win._brandText = text(top, config.Title or "Khfresh Hub", 18, C.text, true)
@@ -661,11 +664,11 @@ function UI:CreateWindow(config)
     win._authorText = text(top, config.Author or "Khfresh Bento UI", 11, C.muted, false)
     win._authorText.Position = UDim2.fromOffset(82, 43); win._authorText.Size = UDim2.new(1, -190, 0, 20); win._authorText.ZIndex = 22
 
-    win._minBtn = make("TextButton", {Text = "", BackgroundColor3 = C.row, BorderSizePixel = 0, Size = UDim2.fromOffset(42, 42), Position = UDim2.new(1, -104, 0, 20), AutoButtonColor = false, ZIndex = 25}, top)
-    corner(win._minBtn, 13); packedIcon(win._minBtn, "minus", UDim2.fromOffset(11, 11), UDim2.fromOffset(20, 20), C.secondary, 26)
+    win._minBtn = make("TextButton", {Text = "", BackgroundColor3 = C.row, BorderSizePixel = 0, Size = UDim2.fromOffset(34, 34), Position = UDim2.new(1, -86, 0, 24), AutoButtonColor = false, ZIndex = 25}, top)
+    corner(win._minBtn, 11); packedIcon(win._minBtn, "minus", UDim2.fromOffset(8, 8), UDim2.fromOffset(18, 18), C.secondary, 26)
     win._minBtn.Activated:Connect(function() win:Toggle() end)
-    win._closeBtn = make("TextButton", {Text = "", BackgroundColor3 = C.row, BorderSizePixel = 0, Size = UDim2.fromOffset(42, 42), Position = UDim2.new(1, -54, 0, 20), AutoButtonColor = false, ZIndex = 25}, top)
-    corner(win._closeBtn, 13); packedIcon(win._closeBtn, "x", UDim2.fromOffset(11, 11), UDim2.fromOffset(20, 20), C.secondary, 26)
+    win._closeBtn = make("TextButton", {Text = "", BackgroundColor3 = C.row, BorderSizePixel = 0, Size = UDim2.fromOffset(34, 34), Position = UDim2.new(1, -44, 0, 24), AutoButtonColor = false, ZIndex = 25}, top)
+    corner(win._closeBtn, 11); packedIcon(win._closeBtn, "x", UDim2.fromOffset(8, 8), UDim2.fromOffset(18, 18), C.secondary, 26)
     win._closeBtn.Activated:Connect(function() win:Destroy() end)
 
     win._rail = make("ScrollingFrame", {
@@ -685,14 +688,14 @@ function UI:CreateWindow(config)
 
     win._dragHandle = make("TextButton", {
         Name = "DragHandle", Text = "", BackgroundTransparency = 1, BorderSizePixel = 0,
-        Position = UDim2.new(0.5, -80, 1, -20), Size = UDim2.fromOffset(160, 16), AutoButtonColor = false, ZIndex = 100,
+        Position = UDim2.new(0.5, -80, 1, -20), Size = UDim2.fromOffset(190, 20), AutoButtonColor = false, ZIndex = 100,
     }, shell)
-    local dragLine = make("Frame", {BackgroundColor3 = C.muted, BackgroundTransparency = 0.15, BorderSizePixel = 0, Position = UDim2.new(0.5, -38, 0.5, -2), Size = UDim2.fromOffset(76, 4), ZIndex = 101}, win._dragHandle)
+    local dragLine = make("Frame", {BackgroundColor3 = C.muted, BackgroundTransparency = 0.15, BorderSizePixel = 0, Position = UDim2.new(0.5, -38, 0.5, -2), Size = UDim2.fromOffset(84, 4), ZIndex = 101}, win._dragHandle)
     corner(dragLine, 999)
 
     win._resizeHandle = make("TextButton", {
         Name = "ResizeHandle", Text = "", BackgroundTransparency = 1, BorderSizePixel = 0,
-        AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, 0, 1, 0), Size = UDim2.fromOffset(30, 30),
+        AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, 0, 1, 0), Size = UDim2.fromOffset(36, 36),
         AutoButtonColor = false, ZIndex = 100,
     }, shell)
     for i = 1, 4 do
@@ -788,9 +791,9 @@ function Window:SelectTab(index)
     for _, t in ipairs(self._tabs) do
         local on = t == tab
         t._page.Visible = on
-        t._btn.BackgroundColor3 = on and C.accentSoft or C.row
+        t._btn.BackgroundColor3 = on and C.lineSoft or C.row
         t._label.TextColor3 = on and C.text or C.secondary
-        iconSetColor(t._icon, on and C.accent or C.muted)
+        iconSetColor(t._icon, on and C.secondary or C.muted)
     end
 end
 
@@ -811,6 +814,10 @@ function Window:Minimize() self._open = false; self._shell.Visible = false end
 function Window:Open() self._open = true; self._shell.Visible = true end
 function Window:Destroy()
     for _, c in ipairs(self._connections or {}) do pcall(function() c:Disconnect() end) end
+    for _, t in ipairs(self._tabs or {}) do
+        pcall(function() if t._settingsLeftConn then t._settingsLeftConn:Disconnect() end end)
+        pcall(function() if t._settingsRightConn then t._settingsRightConn:Disconnect() end end)
+    end
     if #UI._windows <= 1 then
         for _, image in ipairs(UI._iconImages) do pcall(function() image:Destroy() end) end
         table.clear(UI._iconImages)
@@ -823,42 +830,99 @@ function Window:ToggleAcrylic() end
 function Window:SetBackground(asset, transparency)
     if not self._background then
         self._background = make("ImageLabel", {Name = "Background", BackgroundTransparency = 1, BorderSizePixel = 0, Size = UDim2.fromScale(1, 1), ScaleType = Enum.ScaleType.Crop, ZIndex = 0}, self._shell)
-        self._backgroundTint = make("Frame", {Name = "BackgroundTint", BackgroundColor3 = C.canvas, BackgroundTransparency = 0.58, BorderSizePixel = 0, Size = UDim2.fromScale(1, 1), ZIndex = 1}, self._shell)
+        self._backgroundTint = make("Frame", {Name = "BackgroundTint", BackgroundColor3 = Color3.fromRGB(8, 10, 14), BackgroundTransparency = 0.74, BorderSizePixel = 0, Size = UDim2.fromScale(1, 1), ZIndex = 1}, self._shell)
     end
     self._background.Image = tostring(asset or "")
-    self._background.ImageTransparency = tonumber(transparency) or 0.50
+    self._background.ImageTransparency = tonumber(transparency) or 0.42
 end
 function Window:SetLogo(asset)
     if self._logo then self._logo:Destroy() end
     self._logo = make("ImageLabel", {Name = "Logo", BackgroundTransparency = 1, BorderSizePixel = 0, Size = UDim2.fromScale(1, 1), Image = tostring(asset or ""), ScaleType = Enum.ScaleType.Fit, ZIndex = 23}, self._logoHolder)
 end
-function Window:SetFloatingVisible(v)
-    self._floatingVisible = v ~= false
-    if self._floatingGui then self._floatingGui.Enabled = self._floatingVisible end
+function Window:_setFloatingVisible(show, immediate)
+    local sg = self._floatingGui
+    local btn = self._floatingButton
+    if not sg or not sg.Parent or not btn then
+        self._floatingVisible = show == true
+        return
+    end
+    self._floatingVisible = show == true
+    if show then
+        sg.Enabled = true
+        btn.BackgroundTransparency = 1
+        local scale = btn:FindFirstChildOfClass("UIScale")
+        if scale then scale.Scale = immediate and 1 or 0.82 end
+        local iconHolder = btn:FindFirstChildOfClass("Frame")
+        if immediate then
+            btn.BackgroundTransparency = 0
+            if scale then scale.Scale = 1 end
+        else
+            tween(btn, Motion.smooth, {BackgroundTransparency = 0})
+            if scale then tween(scale, Motion.spring, {Scale = 1}) end
+            if iconHolder then
+                for _, obj in ipairs(iconHolder:GetDescendants()) do
+                    if obj:IsA("ImageLabel") then obj.ImageTransparency = 1; tween(obj, Motion.smooth, {ImageTransparency = 0}) end
+                    if obj:IsA("Frame") then
+                        local original = obj:GetAttribute("KhfreshOriginalTransparency")
+                        if original ~= nil then
+                            obj.BackgroundTransparency = 1
+                            tween(obj, Motion.smooth, {BackgroundTransparency = original})
+                        end
+                    end
+                end
+            end
+        end
+    else
+        local scale = btn:FindFirstChildOfClass("UIScale")
+        if immediate then
+            if scale then scale.Scale = 0.82 end
+            btn.BackgroundTransparency = 1
+            sg.Enabled = false
+            return
+        end
+        tween(btn, Motion.fast, {BackgroundTransparency = 1})
+        if scale then tween(scale, Motion.fast, {Scale = 0.82}) end
+        task.delay(0.14, function()
+            if self._floatingVisible == false and sg.Parent then sg.Enabled = false end
+        end)
+    end
 end
+
+function Window:SetFloatingVisible(v)
+    self:_setFloatingVisible(v ~= false, false)
+end
+
 function Window:CreateFloatingToggle(config)
     config = config or {}
     if self._floatingGui then pcall(function() self._floatingGui:Destroy() end) end
-    local mobile = isMobile()
     local sg = make("ScreenGui", {
         Name = "KhfreshFloatingGui", ResetOnSpawn = false, IgnoreGuiInset = true,
         DisplayOrder = 2147483630, ZIndexBehavior = Enum.ZIndexBehavior.Global,
     }, GuiParent)
     self._floatingGui = sg
-    if self._floatingVisible == nil then self._floatingVisible = true end
-    sg.Enabled = self._floatingVisible
-    local size = mobile and 52 or 58
+    self._floatingVisible = true
+    local mobile = isMobile()
+    local size = mobile and 50 or 54
     local btn = make("TextButton", {
-        Name = "FloatingButton", Text = "", BackgroundColor3 = C.shell, BorderSizePixel = 0,
-        Size = UDim2.fromOffset(size, size), Position = UDim2.new(1, -(size + 18), 1, -(size + 22)),
-        AutoButtonColor = false, Active = true, ZIndex = 5,
+        Name = "FloatingButton", Text = "", BackgroundColor3 = C.header, BorderSizePixel = 0,
+        Size = UDim2.fromOffset(size, size), Position = UDim2.new(1, -(size + 16), 1, -(size + 18)),
+        AutoButtonColor = false, Active = true, ZIndex = 10, BackgroundTransparency = 1,
     }, sg)
-    corner(btn, mobile and 17 or 19); outline(btn, C.line, 0.15, 1)
-    packedIcon(btn, config.Icon or "volleyball", UDim2.fromOffset(size * 0.22, size * 0.22), UDim2.fromOffset(size * 0.56, size * 0.56), C.accent, 8)
+    corner(btn, mobile and 16 or 17); outline(btn, C.lineSoft, 0.18, 1)
+    self._floatingButton = btn
+    local iconHolder = packedIcon(btn, config.Icon or "volleyball", UDim2.fromOffset(size * 0.20, size * 0.20), UDim2.fromOffset(size * 0.60, size * 0.60), C.secondary, 12)
+    local scale = make("UIScale", {Scale = 0.82}, btn)
     btn.Activated:Connect(function() self:Toggle() end)
-    local scale = make("UIScale", {Scale = 1}, btn)
-    btn.MouseEnter:Connect(function() tween(scale, Motion.fast, {Scale = 1.06}) end)
-    btn.MouseLeave:Connect(function() tween(scale, Motion.fast, {Scale = 1}) end)
+    local function reposition()
+        if not btn or not btn.Parent then return end
+        local m = isMobile()
+        local sz = m and 50 or 54
+        btn.Size = UDim2.fromOffset(sz, sz)
+        btn.Position = UDim2.new(1, -(sz + 16), 1, -(sz + 18))
+    end
+    local camera = workspace.CurrentCamera
+    if camera then table.insert(self._connections, camera:GetPropertyChangedSignal("ViewportSize"):Connect(reposition)) end
+    self:_setFloatingVisible(true, false)
     return sg
 end
 
@@ -927,14 +991,14 @@ function Tab:CreateSection(nameOrConfig, side)
 
     local header = make("Frame", {Name = "SectionHeader", BackgroundTransparency = 1, BorderSizePixel = 0, Size = UDim2.new(1, 0, 0, 45), ZIndex = 31}, frame)
     if not config.HideHeader and name ~= "" then
-        packedIcon(header, config.Icon or "shapes", UDim2.fromOffset(12, 13), UDim2.fromOffset(19, 19), C.accent, 34)
+        packedIcon(header, config.Icon or "shapes", UDim2.fromOffset(12, 13), UDim2.fromOffset(19, 19), C.muted, 34)
         local title = text(header, name, 13, C.text, true)
         title.Position = UDim2.fromOffset(40, 0); title.Size = UDim2.new(1, -52, 1, 0); title.ZIndex = 34
     else
         header.Visible = false
     end
 
-    local bodyTop = config.HideHeader or name == "" and 0 or 45
+    local bodyTop = (config.HideHeader or name == "") and 0 or 45
     local body = make("Frame", {
         Name = "Body", BackgroundTransparency = 1, BorderSizePixel = 0,
         Position = UDim2.fromOffset(0, bodyTop), Size = UDim2.new(1, 0, 0, 0),
@@ -942,7 +1006,6 @@ function Tab:CreateSection(nameOrConfig, side)
     }, frame)
     pad(body, 10, 10, 0, 12)
     local lay = list(body, 8)
-    body._layout = lay
     local section = setmetatable({
         _tab = self, _frame = frame, _body = body, _layout = lay, _name = name,
         _side = sideName, _sectionOrder = self._order, _rowOrder = 0, _controls = {},
@@ -1063,7 +1126,7 @@ local function buildDropdownMenu(row, options, selected, multi, callback)
         corner(rowBtn, 9)
         local label = text(rowBtn, opt, 11, C.secondary, false); label.Position = UDim2.fromOffset(10, 0); label.Size = UDim2.new(1, -20, 1, 0); label.ZIndex = 5003
         if multi and selected[opt] then
-            packedIcon(rowBtn, "check", UDim2.new(1, -27, 0.5, -8), UDim2.fromOffset(16, 16), C.accent, 5004)
+            packedIcon(rowBtn, "check", UDim2.new(1, -27, 0.5, -8), UDim2.fromOffset(16, 16), C.secondary, 5004)
         end
         rowBtn.Activated:Connect(function()
             if multi then
@@ -1256,7 +1319,7 @@ function Window:ApplyTheme()
     if self._rail then self._rail.BackgroundColor3 = C.rail end
     for _, tab in ipairs(self._tabs) do
         if tab._btn then tab._btn.BackgroundColor3 = tab == self._selected and C.accentSoft or C.row end
-        if tab._icon then iconSetColor(tab._icon, tab == self._selected and C.accent or C.muted) end
+        if tab._icon then iconSetColor(tab._icon, tab == self._selected and C.secondary or C.muted) end
     end
 end
 
