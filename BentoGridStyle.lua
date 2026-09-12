@@ -497,7 +497,7 @@ function KhfreshUI:CreateWindow(config)
         Name = "KhfreshBentoUI",
         ResetOnSpawn = false,
         IgnoreGuiInset = true,
-        DisplayOrder = 2147482000,
+        DisplayOrder = 2147483645,
         ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
     }, guiParent)
     pcall(function() if syn and syn.protect_gui then syn.protect_gui(gui) end end)
