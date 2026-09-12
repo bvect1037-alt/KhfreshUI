@@ -18621,6 +18621,42 @@ local function draggable(library: any, target: GuiObject, handle: GuiObject)
 		if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then
 			return
 		end
+
+		local function resizable(library: any, target: GuiObject, handle: GuiObject)
+			local resizing = false
+			local startInput: Vector3? = nil
+			local startWidth = 0
+			local startHeight = 0
+			library:_connect(handle.InputBegan, function(input: InputObject)
+				if input.UserInputType ~= Enum.UserInputType.MouseButton1
+					and input.UserInputType ~= Enum.UserInputType.Touch then
+					return
+				end
+				resizing = true
+				startInput = input.Position
+				startWidth = target.AbsoluteSize.X
+				startHeight = target.AbsoluteSize.Y
+				library:_connect(input.Changed, function()
+					if input.UserInputState == Enum.UserInputState.End then
+						resizing = false
+						startInput = nil
+					end
+				end)
+			end)
+			library:_connect(UserInputService.InputChanged, function(input: InputObject)
+				if not resizing or not startInput then
+					return
+				end
+				if input.UserInputType ~= Enum.UserInputType.MouseMovement
+					and input.UserInputType ~= Enum.UserInputType.Touch then
+					return
+				end
+				local delta = input.Position - startInput
+				library._targetWidth = clamp(startWidth + delta.X, 420, 1100)
+				library._targetHeight = clamp(startHeight + delta.Y, 320, 850)
+				library:_resize()
+			end)
+		end
 		dragging = true
 		startInput = input.Position
 		startPosition = target.Position
@@ -18793,13 +18829,19 @@ function Library.new(options: Options?): any
 	local minimizeIcon = self:_addIcon(minimize, "Minus", 18)
 	minimizeIcon.Position = UDim2.fromOffset(6, 6)
 	self:_connect(minimize.Activated, function() self:SetVisible(false) end)
-	draggable(self, window, topbar)
+	-- Drag only from the dedicated footer, keeping cards and controls stationary.
 
-	local tabsBar = make("Frame", {
+	local tabsBar = make("ScrollingFrame", {
+		Active = true,
+		AutomaticCanvasSize = Enum.AutomaticSize.X,
 		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		CanvasSize = UDim2.fromOffset(0, 0),
 		Name = "Tabs",
 		Position = UDim2.fromOffset(16, 68),
 		Size = UDim2.new(1, -32, 0, 36),
+		ScrollBarImageTransparency = 1,
+		ScrollBarThickness = 0,
 		Visible = false,
 	}, window)
 	self._tabsBar = tabsBar
@@ -18813,10 +18855,50 @@ function Library.new(options: Options?): any
 		BackgroundTransparency = 1,
 		Name = "ContentHost",
 		Position = UDim2.fromOffset(0, 68),
-		Size = UDim2.new(1, 0, 1, -68),
+		Size = UDim2.new(1, 0, 1, -98),
 	}, window)
 	self._contentHost = content
 	self._contentTop = 68
+
+	local dragFooter = make("TextButton", {
+		Active = true,
+		AutoButtonColor = false,
+		BackgroundColor3 = self.Theme.Surface2,
+		BackgroundTransparency = 0.35,
+		BorderSizePixel = 0,
+		Name = "DragFooter",
+		Position = UDim2.new(0, 16, 1, -25),
+		Size = UDim2.new(1, -56, 0, 17),
+		Text = "  BENTO  •  DRAG TO MOVE",
+		TextColor3 = self.Theme.Muted,
+		TextSize = 9,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		ZIndex = 15,
+	}, window)
+	rounded(dragFooter, 8)
+	self:_theme(dragFooter, "BackgroundColor3", "Surface2")
+	self:_theme(dragFooter, "TextColor3", "Muted")
+	draggable(self, window, dragFooter)
+	self.DragFooter = dragFooter
+
+	local resizeGrip = make("TextButton", {
+		Active = true,
+		AutoButtonColor = false,
+		BackgroundColor3 = self.Theme.Surface3,
+		BorderSizePixel = 0,
+		Name = "ResizeGrip",
+		Position = UDim2.new(1, -34, 1, -25),
+		Size = UDim2.fromOffset(26, 17),
+		Text = "⌟",
+		TextColor3 = self.Theme.Muted,
+		TextSize = 16,
+		ZIndex = 16,
+	}, window)
+	rounded(resizeGrip, 7)
+	self:_theme(resizeGrip, "BackgroundColor3", "Surface3")
+	self:_theme(resizeGrip, "TextColor3", "Muted")
+	resizable(self, window, resizeGrip)
+	self.ResizeGrip = resizeGrip
 
 	local notifications = make("Frame", {
 		AnchorPoint = Vector2.new(1, 0),
@@ -18855,19 +18937,11 @@ end
 function Library:SetVisible(visible: boolean)
 	if self._destroyed then return end
 	self._visible = visible
+	-- Visibility is intentionally instantaneous. Resizing the whole window on
+	-- every toggle click makes controls appear to jump and is uncomfortable on touch.
+	self.Window.Visible = visible
 	if visible then
-		self.Window.Visible = true
-		self.Window.Size = UDim2.fromOffset(self._currentWidth, 0)
-		play(self.Window, {Size = UDim2.fromOffset(self._currentWidth, self._currentHeight)}, MOTION.Spring)
-	else
-		local animation = play(self.Window, {Size = UDim2.fromOffset(self._currentWidth, 0)}, MOTION.Fast)
-		if animation then
-			self:_connect(animation.Completed, function()
-				if not self._visible and self.Window.Parent then self.Window.Visible = false end
-			end)
-		else
-			self.Window.Visible = false
-		end
+		self.Window.Size = UDim2.fromOffset(self._currentWidth, self._currentHeight)
 	end
 end
 
@@ -18955,7 +19029,7 @@ function Library:AddTab(options: Options): any
 	if #self._tabs > 1 then
 		self._contentTop = 110
 		self._contentHost.Position = UDim2.fromOffset(0, self._contentTop)
-		self._contentHost.Size = UDim2.new(1, 0, 1, -self._contentTop)
+		self._contentHost.Size = UDim2.new(1, 0, 1, -self._contentTop - 30)
 	end
 	if options.Hidden ~= true or #self._tabs == 1 then
 		self:SelectTab(tab)
@@ -19259,8 +19333,7 @@ function Library:AddButton(options: Options): Frame
 	self:_connect(button.Activated, function() invoke(options.Callback) end)
 	self:_connect(button.MouseEnter, function() play(card, {BackgroundColor3 = self.Theme.Surface2}, MOTION.Fast) end)
 	self:_connect(button.MouseLeave, function() play(card, {BackgroundColor3 = options.BackgroundColor or self.Theme.Surface}, MOTION.Smooth) end)
-	self:_connect(button.MouseButton1Down, function() play(card, {Size = UDim2.new(1, -2, 0, card.Size.Y.Offset - 2)}, MOTION.Fast) end)
-	self:_connect(button.MouseButton1Up, function() play(card, {Size = UDim2.new(1, 0, 0, card.Size.Y.Offset + 0)}, MOTION.Fast) end)
+	-- Keep card geometry fixed on click; only color feedback is animated.
 	return card
 end
 
@@ -19364,7 +19437,10 @@ function Library:AddDropdown(options: Options): Control
 	rounded(menu, 8)
 	stroked(menu, self.Theme.Stroke, 0.35)
 	self:_theme(menu, "BackgroundColor3", "Surface2")
-	local menuLayout = make("UIListLayout", {SortOrder = Enum.SortOrder.LayoutOrder}, menu)
+	local menuLayout = make("UIListLayout", {
+		Padding = UDim.new(0, 6),
+		SortOrder = Enum.SortOrder.LayoutOrder,
+	}, menu)
 	local value: any = options.Default
 	local function display()
 		if value == nil or value == "" then
@@ -19384,7 +19460,7 @@ function Library:AddDropdown(options: Options): Control
 	local function setOpen(newOpen: boolean)
 		open = newOpen
 		menu.Visible = open
-		card.Size = UDim2.new(1, 0, 0, open and 82 + #values * 28 or 78)
+		card.Size = UDim2.new(1, 0, 0, open and 82 + #values * 36 or 78)
 		if open then
 			arrow.Rotation = 180
 		else
@@ -19392,7 +19468,19 @@ function Library:AddDropdown(options: Options): Control
 		end
 	end
 	for index, candidate in ipairs(values) do
-		local item = make("TextButton", {AutoButtonColor = false, BackgroundTransparency = 1, LayoutOrder = index, Size = UDim2.new(1, 0, 0, 28), Text = tostring(candidate), TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left}, menu)
+		local item = make("TextButton", {
+			AutoButtonColor = false,
+			BackgroundColor3 = self.Theme.Surface3,
+			BorderSizePixel = 0,
+			LayoutOrder = index,
+			Size = UDim2.new(1, 0, 0, 30),
+			Text = tostring(candidate),
+			TextSize = 12,
+			TextXAlignment = Enum.TextXAlignment.Left,
+		}, menu)
+		rounded(item, 7)
+		stroked(item, self.Theme.Stroke, 0.35)
+		self:_theme(item, "BackgroundColor3", "Surface3")
 		make("UIPadding", {PaddingLeft = UDim.new(0, 10)}, item)
 		self:_theme(item, "TextColor3", "Muted")
 		self:_connect(item.Activated, function() set(candidate, false); setOpen(false) end)
@@ -19443,10 +19531,21 @@ function Library:AddMultiDropdown(options: Options): Control
 	end
 	local open = false
 	for index, itemValue in ipairs(values) do
-		local item = make("TextButton", {AutoButtonColor = false, BackgroundTransparency = 1, LayoutOrder = index, Size = UDim2.new(1, 0, 0, 28), Text = "", TextXAlignment = Enum.TextXAlignment.Left}, menu)
-		local check = make("TextLabel", {BackgroundTransparency = 1, Font = Enum.Font.GothamMedium, Position = UDim2.fromOffset(10, 0), Size = UDim2.fromOffset(22, 28), TextSize = 14, TextXAlignment = Enum.TextXAlignment.Left}, item)
+		local item = make("TextButton", {
+			AutoButtonColor = false,
+			BackgroundColor3 = self.Theme.Surface3,
+			BorderSizePixel = 0,
+			LayoutOrder = index,
+			Size = UDim2.new(1, 0, 0, 30),
+			Text = "",
+			TextXAlignment = Enum.TextXAlignment.Left,
+		}, menu)
+		rounded(item, 7)
+		stroked(item, self.Theme.Stroke, 0.35)
+		self:_theme(item, "BackgroundColor3", "Surface3")
+		local check = make("TextLabel", {BackgroundTransparency = 1, Font = Enum.Font.GothamMedium, Position = UDim2.fromOffset(10, 0), Size = UDim2.fromOffset(22, 30), TextSize = 14, TextXAlignment = Enum.TextXAlignment.Left}, item)
 		self:_theme(check, "TextColor3", "Accent")
-		local itemLabel = make("TextLabel", {BackgroundTransparency = 1, Font = Enum.Font.Gotham, Position = UDim2.fromOffset(32, 0), Size = UDim2.new(1, -38, 1, 0), Text = tostring(itemValue), TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left}, item)
+		local itemLabel = make("TextLabel", {BackgroundTransparency = 1, Font = Enum.Font.Gotham, Position = UDim2.fromOffset(38, 0), Size = UDim2.new(1, -48, 1, 0), Text = tostring(itemValue), TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left}, item)
 		self:_theme(itemLabel, "TextColor3", "Muted")
 		local function renderItem()
 			if selected[itemValue] then
@@ -19461,7 +19560,7 @@ function Library:AddMultiDropdown(options: Options): Control
 	self:_connect(button.Activated, function()
 		open = not open
 		menu.Visible = open
-		card.Size = UDim2.new(1, 0, 0, open and 82 + #values * 28 or 78)
+		card.Size = UDim2.new(1, 0, 0, open and 82 + #values * 36 or 78)
 		if open then
 			arrow.Rotation = 180
 		else
@@ -21179,7 +21278,7 @@ end
 function Library:SetWindowPadding(padding: number): self
 	if self._contentHost then
 		self._contentHost.Position = UDim2.fromOffset(padding, self._contentTop or 8)
-		self._contentHost.Size = UDim2.new(1, -padding * 2, 1, -(self._contentTop or 8) - padding)
+		self._contentHost.Size = UDim2.new(1, -padding * 2, 1, -(self._contentTop or 8) - padding - 30)
 	end
 	return self
 end
