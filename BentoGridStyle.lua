@@ -781,7 +781,7 @@ function Tab:_insertSection(section)
         elseif side=="right" then section._parent=self._columns[2]
         else
             self._settingsCounter += 1
-            section._parent=self._columns[(((self._settingsCounter-1)%2)+1]
+            section._parent=self._columns[(((self._settingsCounter-1)%2)+1)]
         end
         section._frame.Parent=section._parent
     else
