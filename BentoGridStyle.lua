@@ -1,4 +1,4 @@
---// Khfresh BentoGridStyle
+
 --// UI library rebuilt specifically for Khfresh Hub.
 --// The old UI source is used only as an API/layout reference.
 --// No old hub features/assets are embedded here.
