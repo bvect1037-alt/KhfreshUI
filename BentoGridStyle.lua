@@ -11,7 +11,22 @@ local HttpService = game:GetService("HttpService")
 local TextService = game:GetService("TextService")
 
 local LocalPlayer = Players.LocalPlayer
-local guiParent = (gethui and gethui()) or LocalPlayer:WaitForChild("PlayerGui")
+local function resolveGuiParent()
+    local ok, parent = pcall(function()
+        if type(gethui) == "function" then
+            local h = gethui()
+            if h then return h end
+        end
+        return nil
+    end)
+    if ok and parent then return parent end
+    ok, parent = pcall(function()
+        return game:GetService("CoreGui")
+    end)
+    if ok and parent then return parent end
+    return LocalPlayer:WaitForChild("PlayerGui")
+end
+local guiParent = resolveGuiParent()
 
 local KhfreshUI = {
     _windows = {},
@@ -226,7 +241,7 @@ local function addGridPattern(parent, z)
     }, parent)
     for i = 1, 8 do
         make("Frame", {
-            BackgroundColor3 = C.grid,
+            BackgroundColor3 = C.grid or C.line or Color3.fromRGB(40,42,55),
             BackgroundTransparency = 0.82,
             BorderSizePixel = 0,
             Position = UDim2.new(i / 9, 0, 0, 0),
@@ -234,7 +249,7 @@ local function addGridPattern(parent, z)
             ZIndex = z or 1,
         }, holder)
         make("Frame", {
-            BackgroundColor3 = C.grid,
+            BackgroundColor3 = C.grid or C.line or Color3.fromRGB(40,42,55),
             BackgroundTransparency = 0.82,
             BorderSizePixel = 0,
             Position = UDim2.new(0, 0, i / 9, 0),
@@ -579,6 +594,13 @@ function KhfreshUI:CreateWindow(config)
     end))
 
     table.insert(KhfreshUI._windows, win)
+    -- Force visible (some executors hide new ScreenGui until next frame)
+    gui.Enabled = true
+    shell.Visible = true
+    pcall(function()
+        shell.Parent = gui
+        gui.Parent = guiParent
+    end)
     return win
 end
 
