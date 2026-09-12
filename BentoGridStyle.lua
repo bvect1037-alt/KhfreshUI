@@ -1189,7 +1189,6 @@ function Tab:CreateActionRow(c)return self:CreateFeaturedCard(c)end
 function Tab:CreateCardGroup(c)return self:CreateFeaturedCard(c)end
 
 return UI
-
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local Players = game:GetService("Players")
