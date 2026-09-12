@@ -1,4 +1,4 @@
-
+--// Khfresh BentoGridStyle
 --// UI library rebuilt specifically for Khfresh Hub.
 --// The old UI source is used only as an API/layout reference.
 --// No old hub features/assets are embedded here.
@@ -7,7 +7,6 @@ local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local HttpService = game:GetService("HttpService")
 
 local LocalPlayer = Players.LocalPlayer
 
@@ -26,11 +25,10 @@ end
 local GuiParent = resolveParent()
 
 local UI = {
-    _version = "4.0.0-khfresh-hub",
+    _version = "5.1.0-khfresh-pixel",
     _windows = {},
     _notifyGui = nil,
-    _iconPack = nil,
-    _iconReady = false,
+
 }
 
 --==============================================================
@@ -176,189 +174,124 @@ local function cleanName(s)
 end
 
 --==============================================================
--- LUCIDE API
+-- PROCEDURAL PIXEL ICON ENGINE
 --==============================================================
--- Footagesus Icons exposes the Lucide catalog through Icon()/GetIcon().
--- This is loaded at runtime so the library can use the large Lucide catalog
--- rather than embedding a small hard-coded icon table.
-local function loadLucide()
-    if UI._iconReady then return UI._iconPack end
-    local urls = {
-        "https://raw.githubusercontent.com/Footagesus/Icons/main/Main-v2.lua",
-        "https://raw.githubusercontent.com/Footagesus/Icons/main/Main.lua",
-    }
-    for _, url in ipairs(urls) do
-        local ok, body = pcall(function()
-            if game.HttpGetAsync then return game:HttpGetAsync(url) end
-            return game:HttpGet(url)
-        end)
-        if ok and type(body) == "string" and #body > 1000 and type(loadstring) == "function" then
-            local okChunk, fn = pcall(loadstring, body, "@KhfreshLucide")
-            if okChunk and type(fn) == "function" then
-                local okRun, pack = pcall(fn)
-                if okRun and type(pack) == "table" then
-                    pcall(function() if pack.SetIconsType then pack.SetIconsType("lucide") end end)
-                    UI._iconPack = pack
-                    UI._iconReady = true
-                    return pack
-                end
+-- No external icon library, no icon asset ids. Icons are rendered from
+-- tiny ASCII/pixel matrices using Roblox Frames, so they are deterministic
+-- and work offline once the UI library itself has loaded.
+local PIXEL_ICONS = {
+    ["x"] = {"10001","01010","00100","01010","10001"},
+    ["minus"] = {"00000","00000","11111","00000","00000"},
+    ["plus"] = {"00100","00100","11111","00100","00100"},
+    ["chevron-down"] = {"10001","01010","00100","00000","00000"},
+    ["chevron-right"] = {"10000","11000","01100","00110","00011"},
+    ["check"] = {"00001","00010","10100","01000","00000"},
+    ["circle-check"] = {"01110","10001","10101","10011","01110"},
+    ["play"] = {"10000","11000","11100","11000","10000"},
+    ["settings"] = {"00100","10101","01110","10101","00100"},
+    ["search"] = {"01110","10001","10001","01010","00011"},
+    ["info"] = {"01110","00100","00100","01110","00000"},
+    ["house"] = {"00100","01110","11111","10001","10001"},
+    ["layout-dashboard"] = {"11111","10001","10101","10001","11111"},
+    ["panel-left"] = {"11111","11001","11001","11001","11111"},
+    ["panels-top-left"] = {"11111","10001","10111","10111","11111"},
+    ["fish"] = {"00100","01110","11111","01110","00101"},
+    ["fish-symbol"] = {"00100","01010","11111","01010","00100"},
+    ["fishing-rod"] = {"11000","01100","00110","00011","00001"},
+    ["hand-heart"] = {"00100","01110","11111","01110","00100"},
+    ["flame"] = {"00100","01110","11011","10101","01110"},
+    ["swords"] = {"10001","01010","00100","01010","10001"},
+    ["sword"] = {"00001","00010","00100","01000","10000"},
+    ["shopping-cart"] = {"10000","11110","10001","01110","00000"},
+    ["shopping-bag"] = {"01110","01010","11111","10001","11111"},
+    ["store"] = {"11111","10101","11111","10001","11111"},
+    ["repeat-2"] = {"11110","00001","11110","10000","01111"},
+    ["scroll-text"] = {"11111","10101","10101","10101","11111"},
+    ["trending-up"] = {"10000","11000","01100","00110","00011"},
+    ["map-pin"] = {"00100","01110","01110","00100","00000"},
+    ["ship"] = {"10001","11011","11111","01110","00100"},
+    ["user"] = {"01110","11111","01110","00100","01010"},
+    ["user-round"] = {"01110","10101","01110","00100","01010"},
+    ["users-round"] = {"10101","11111","01110","10101","10101"},
+    ["lock"] = {"01110","01010","11111","10001","11111"},
+    ["shield-alert"] = {"01110","11111","10101","00100","01010"},
+    ["shield"] = {"01110","11111","10101","10101","01110"},
+    ["scan-search"] = {"11011","10001","10111","10001","11011"},
+    ["sliders-horizontal"] = {"10101","00100","11111","00100","10101"},
+    ["hammer"] = {"11100","00111","00100","01100","11000"},
+    ["dices"] = {"11100","10100","11100","00111","00101"},
+    ["refresh-cw"] = {"01110","11001","00111","10001","01110"},
+    ["shuffle"] = {"10001","01010","00100","01010","10001"},
+    ["cloud-sun"] = {"00100","01110","10111","11111","00100"},
+    ["toggle-right"] = {"11111","10001","10101","10001","11111"},
+    ["type"] = {"11111","00100","00100","00100","00100"},
+    ["list"] = {"10111","00100","10111","00100","10111"},
+    ["palette"] = {"01110","11011","10101","11010","01100"},
+    ["keyboard"] = {"11111","10101","11111","10001","11111"},
+    ["history"] = {"01110","11001","10101","10011","01110"},
+    ["message-circle"] = {"01110","10001","10111","10001","01110"},
+    ["music-2"] = {"00111","00100","00100","11100","11000"},
+    ["external-link"] = {"10000","10111","10101","11101","00001"},
+    ["badge-check"] = {"01110","10101","11111","10101","01110"},
+    ["copy"] = {"00111","00101","11101","10101","11111"},
+    ["eye-off"] = {"10101","01010","00100","01010","10101"},
+    ["sparkles"] = {"00100","11111","00100","01010","10001"},
+    ["zap"] = {"00110","01100","11000","01100","00110"},
+    ["shapes"] = {"01110","10101","01110","10001","11111"},
+    ["volleyball"] = {"0011100","0111110","1110111","1101011","1110111","0111110","0011100"},
+    ["circle"] = {"01110","10001","10001","10001","01110"},
+}
+
+local PIXEL_ALIASES = {
+    dashboard="layout-dashboard", layout="layout-dashboard", overview="layout-dashboard",
+    home="house", config="sliders-horizontal", tune="sliders-horizontal",
+    close="x", remove="minus", add="plus", next="chevron-right",
+    expand="chevron-down", cancel="x", back="chevron-right",
+    warning="shield-alert", success="circle-check",
+}
+
+local function normalizePixelIcon(name)
+    local key = string.lower(tostring(name or "circle")):gsub("%s+", "-")
+    return PIXEL_ALIASES[key] or key
+end
+
+local function renderPixelIcon(parent, iconName, position, size, color, z)
+    local holder = make("Frame", {
+        Name="PixelIcon_"..cleanName(iconName), BackgroundTransparency=1, BorderSizePixel=0,
+        Position=position or UDim2.fromOffset(0,0), Size=size or UDim2.fromOffset(20,20), ZIndex=z or 5,
+    }, parent)
+    local map = PIXEL_ICONS[normalizePixelIcon(iconName)] or PIXEL_ICONS.circle
+    local rows = #map
+    local cols = #map[1]
+    local gap = 1
+    local cellX = 1 / math.max(1, cols)
+    local cellY = 1 / math.max(1, rows)
+    for y,row in ipairs(map) do
+        for x = 1,#row do
+            if row:sub(x,x) ~= "0" then
+                local px = make("Frame", {
+                    BackgroundColor3=color or C.secondary, BorderSizePixel=0,
+                    Position=UDim2.new((x-1)*cellX, gap/2, (y-1)*cellY, gap/2),
+                    Size=UDim2.new(cellX, -gap, cellY, -gap), ZIndex=z or 5,
+                }, holder)
             end
         end
-    end
-    return nil
-end
-
-task.spawn(loadLucide)
-
-local function iconResult(name)
-    local pack = UI._iconPack or loadLucide()
-    if not pack then return nil end
-    local candidates = { tostring(name or "circle"), tostring(name or "circle"):lower() }
-    for _, n in ipairs(candidates) do
-        local ok, result = pcall(function()
-            if pack.GetIcon then return pack.GetIcon(n) end
-            if pack.Icon then return pack.Icon(n, "lucide", false) end
-        end)
-        if ok and result then return result end
-    end
-    return nil
-end
-
-local function drawLine(parent, x1, y1, x2, y2, color, thickness, z)
-    local dx, dy = x2 - x1, y2 - y1
-    local length = math.sqrt(dx * dx + dy * dy)
-    local midX, midY = (x1 + x2) / 2, (y1 + y2) / 2
-    local line = make("Frame", {
-        BorderSizePixel = 0, BackgroundColor3 = color or C.secondary,
-        AnchorPoint = Vector2.new(0.5, 0.5),
-        Position = UDim2.new(0, midX, 0, midY),
-        Size = UDim2.new(0, length, 0, thickness or 2),
-        Rotation = math.deg(math.atan2(dy, dx)),
-        ZIndex = z or 5,
-    }, parent)
-    return line
-end
-
--- Vector fallbacks for controls that appear most frequently in this hub.
--- The Lucide API remains the first choice; this fallback makes core controls
--- readable even when an executor cannot load the remote icon pack.
-local function drawVectorFallback(parent, name, size, color, z)
-    local holder = make("Frame", {
-        BackgroundTransparency = 1,
-        Size = size or UDim2.fromOffset(20, 20),
-        ZIndex = z or 5,
-    }, parent)
-    local w, h = 20, 20
-    local n = tostring(name or "circle"):lower()
-    if n == "x" or n == "close" then
-        drawLine(holder, 5, 5, 15, 15, color, 2, z)
-        drawLine(holder, 15, 5, 5, 15, color, 2, z)
-    elseif n == "minus" then
-        drawLine(holder, 4, 10, 16, 10, color, 2, z)
-    elseif n == "plus" then
-        drawLine(holder, 4, 10, 16, 10, color, 2, z)
-        drawLine(holder, 10, 4, 10, 16, color, 2, z)
-    elseif n == "chevron-down" then
-        drawLine(holder, 5, 7, 10, 12, color, 2, z)
-        drawLine(holder, 10, 12, 15, 7, color, 2, z)
-    elseif n == "chevron-right" then
-        drawLine(holder, 7, 5, 13, 10, color, 2, z)
-        drawLine(holder, 13, 10, 7, 15, color, 2, z)
-    elseif n == "search" then
-        local c = make("Frame", {BackgroundTransparency=1, Position=UDim2.fromOffset(3,3), Size=UDim2.fromOffset(12,12), ZIndex=z or 5}, holder)
-        corner(c, 99); outline(c,color,0,2)
-        drawLine(holder, 13, 13, 18, 18, color, 2, z)
-    elseif n == "check" or n == "circle-check" then
-        local c = make("Frame", {BackgroundTransparency=1, Position=UDim2.fromOffset(2,2), Size=UDim2.fromOffset(16,16), ZIndex=z or 5}, holder)
-        corner(c,99); outline(c,color,0,2)
-        drawLine(holder, 5, 10, 9, 14, color, 2, z)
-        drawLine(holder, 9, 14, 15, 7, color, 2, z)
-    elseif n == "play" then
-        local tri = make("TextLabel", {BackgroundTransparency=1, Size=UDim2.fromScale(1,1), Text="▶", TextSize=13, Font=Enum.Font.GothamBold, TextColor3=color, ZIndex=z or 5}, holder)
-        tri.TextXAlignment = Enum.TextXAlignment.Center
-        tri.TextYAlignment = Enum.TextYAlignment.Center
-    elseif n == "settings" then
-        local c = make("Frame", {BackgroundTransparency=1, Position=UDim2.fromOffset(4,4), Size=UDim2.fromOffset(12,12), ZIndex=z or 5}, holder)
-        corner(c,99); outline(c,color,0,2)
-        local dot = make("Frame", {BackgroundColor3=color, BorderSizePixel=0, Position=UDim2.fromOffset(7,7), Size=UDim2.fromOffset(6,6), ZIndex=(z or 5)+1}, holder)
-        corner(dot,99)
-        for _, seg in ipairs({{10,1,2,5},{10,14,2,5},{1,9,5,2},{14,9,5,2}}) do drawLine(holder, seg[1],seg[2],seg[1]+seg[3],seg[2]+seg[4],color,2,z) end
-    elseif n == "volleyball" then
-        -- Procedural volleyball: circle + curved seams.
-        local ball = make("Frame", {BackgroundTransparency=1, Position=UDim2.fromOffset(2,2), Size=UDim2.fromOffset(16,16), ZIndex=z or 5}, holder)
-        corner(ball,99); outline(ball,color,0,1.8)
-        drawLine(holder, 5, 3, 7, 17, color, 1.6, z)
-        drawLine(holder, 3, 6, 17, 13, color, 1.6, z)
-        drawLine(holder, 4, 16, 16, 4, color, 1.6, z)
-    else
-        local c = make("Frame", {BackgroundTransparency=1, Position=UDim2.fromOffset(3,3), Size=UDim2.fromOffset(14,14), ZIndex=z or 5}, holder)
-        corner(c,99); outline(c,color,0,1.7)
-        local d = make("Frame", {BackgroundColor3=color, BorderSizePixel=0, Position=UDim2.fromOffset(6,6), Size=UDim2.fromOffset(6,6), ZIndex=(z or 5)+1}, holder)
-        corner(d,99)
     end
     return holder
 end
 
 local function renderIcon(parent, iconName, position, size, color, z)
-    local holder = make("Frame", {
-        BackgroundTransparency = 1,
-        BorderSizePixel = 0,
-        Position = position or UDim2.fromOffset(0, 0),
-        Size = size or UDim2.fromOffset(20, 20),
-        ZIndex = z or 5,
-    }, parent)
-
-    local result = iconResult(iconName)
-    if result then
-        local imageId = result[1]
-        local meta = result[2]
-        if type(imageId) == "string" then
-            local img = make("ImageLabel", {
-                BackgroundTransparency = 1,
-                Size = UDim2.fromScale(1, 1),
-                Image = imageId,
-                ImageColor3 = color or C.secondary,
-                ScaleType = Enum.ScaleType.Fit,
-                ZIndex = z or 5,
-            }, holder)
-            if type(meta) == "table" then
-                if meta.ImageRectSize then img.ImageRectSize = meta.ImageRectSize end
-                if meta.ImageRectPosition then img.ImageRectOffset = meta.ImageRectPosition end
-            end
-            if meta and type(meta.Parts) == "table" then
-                for index, part in ipairs(meta.Parts) do
-                    local partResult = iconResult(part)
-                    if partResult then
-                        make("ImageLabel", {
-                            BackgroundTransparency = 1,
-                            Size = UDim2.fromScale(1, 1),
-                            Image = partResult[1],
-                            ImageRectSize = partResult[2] and partResult[2].ImageRectSize or Vector2.zero,
-                            ImageRectOffset = partResult[2] and partResult[2].ImageRectPosition or Vector2.zero,
-                            ImageColor3 = color or C.secondary,
-                            ZIndex = (z or 5) + index,
-                        }, holder)
-                    end
-                end
-            end
-            return holder
-        end
-    end
-
-    holder:ClearAllChildren()
-    local fallback = drawVectorFallback(holder, iconName, size, color, z)
-    fallback.Position = UDim2.fromScale(0, 0)
-    return holder
+    return renderPixelIcon(parent, iconName, position, size, color, z)
 end
 
--- Retry icons after async pack initialization.
-task.spawn(function()
-    for _ = 1, 30 do
-        task.wait(0.2)
-        if UI._iconReady then break end
-        pcall(loadLucide)
+local function pixelIconSetColor(holder, color)
+    if not holder then return end
+    for _,child in ipairs(holder:GetDescendants()) do
+        if child:IsA("Frame") and child ~= holder then
+            child.BackgroundColor3=color
+        end
     end
-end)
+end
 
 --==============================================================
 -- WINDOW / TAB / SECTION
@@ -377,8 +310,13 @@ end
 
 local function computeSize(requested)
     local vp = viewport()
-    local w = math.clamp(requested and requested.X.Offset or 760, 520, math.max(520, vp.X - 24))
-    local h = math.clamp(requested and requested.Y.Offset or 540, 420, math.max(420, vp.Y - 24))
+    local mobile = vp.X < 700 or (UserInputService.TouchEnabled and vp.X < 900)
+    local minW = mobile and 300 or 520
+    local minH = mobile and 340 or 420
+    local maxW = math.max(minW, vp.X - (mobile and 12 or 24))
+    local maxH = math.max(minH, vp.Y - (mobile and 12 or 24))
+    local w = math.clamp(requested and requested.X.Offset or 760, minW, maxW)
+    local h = math.clamp(requested and requested.Y.Offset or 540, minH, maxH)
     return UDim2.fromOffset(w, h)
 end
 
@@ -390,25 +328,37 @@ local function installResponsive(win)
         local mobile = vp.X < 700 or UserInputService.TouchEnabled and vp.X < 850
         win._mobile = mobile
         if mobile then
-            win._shell.Size = UDim2.new(1, -16, 1, -16)
+            local vpW, vpH = vp.X, vp.Y
+            win._shell.Size = UDim2.fromOffset(math.max(300, vpW-12), math.max(340, vpH-12))
             win._shell.Position = UDim2.fromScale(0.5, 0.5)
-            win._rail.Size = UDim2.new(0, 66, 1, -win._topHeight)
-            win._content.Position = UDim2.fromOffset(66, win._topHeight)
-            win._content.Size = UDim2.new(1, -66, 1, -win._topHeight)
+            win._topHeight = vpW < 520 and 68 or 76
+            win._top.Size = UDim2.new(1,0,0,win._topHeight)
+            win._rail.Size = UDim2.new(0, 62, 1, -win._topHeight)
+            win._rail.Position = UDim2.fromOffset(0, win._topHeight)
+            win._content.Position = UDim2.fromOffset(62, win._topHeight)
+            win._content.Size = UDim2.new(1, -62, 1, -win._topHeight)
             if win._logo then
-                win._logo.Size = UDim2.fromOffset(38, 38)
-                win._logo.Position = UDim2.fromOffset(10, 8)
+                win._logo.Size = UDim2.fromOffset(34,34)
+                win._logo.Position = UDim2.fromOffset(10,9)
+            end
+            if win._logoHolder then
+                win._logoHolder.Size=UDim2.fromOffset(52,52)
+                win._logoHolder.Position=UDim2.fromOffset(8,8)
             end
             if win._brandText then win._brandText.Visible = false end
             if win._authorText then win._authorText.Visible = false end
             for _, tab in ipairs(win._tabs) do
                 if tab._label then tab._label.Visible = false end
-                if tab._icon then tab._icon.Position = UDim2.new(0.5, -10, 0.5, -10) end
+                if tab._btn then tab._btn.Size=UDim2.new(1,0,0,44) end
+                if tab._icon then tab._icon.Position = UDim2.new(0.5, -11, 0.5, -11) end
             end
         else
             local requested = win._requestedSize or UDim2.fromOffset(760, 540)
+            win._topHeight = 82
+            win._top.Size = UDim2.new(1,0,0,82)
             win._shell.Size = computeSize(requested)
-            win._rail.Size = UDim2.fromOffset(win._railWidth, 1)
+            win._rail.Size = UDim2.new(0,win._railWidth,1,-win._topHeight)
+            win._rail.Position = UDim2.fromOffset(0,win._topHeight)
             win._content.Position = UDim2.fromOffset(win._railWidth, win._topHeight)
             win._content.Size = UDim2.new(1, -win._railWidth, 1, -win._topHeight)
             if win._brandText then win._brandText.Visible = true end
@@ -439,7 +389,9 @@ local function installDragAndResize(win)
     end
 
     win._dragHandle.InputBegan:Connect(startMove)
-    win._top.InputBegan:Connect(startMove)
+    win._top.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then startMove(input) end
+    end)
 
     table.insert(win._connections, UserInputService.InputChanged:Connect(function(input)
         if win._moving and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
@@ -450,8 +402,11 @@ local function installDragAndResize(win)
             local delta = input.Position - win._resizeStart
             local old = win._resizeBase
             local vp = viewport()
-            local w = math.clamp(old.X.Offset + delta.X, 520, math.max(520, vp.X - 24))
-            local h = math.clamp(old.Y.Offset + delta.Y, 420, math.max(420, vp.Y - 24))
+            local mobile = vp.X < 700 or (UserInputService.TouchEnabled and vp.X < 900)
+            local minW = mobile and 300 or 520
+            local minH = mobile and 340 or 420
+            local w = math.clamp(old.X.Offset + delta.X, minW, math.max(minW, vp.X - (mobile and 12 or 24)))
+            local h = math.clamp(old.Y.Offset + delta.Y, minH, math.max(minH, vp.Y - (mobile and 12 or 24)))
             shell.Size = UDim2.fromOffset(w, h)
             win._requestedSize = UDim2.fromOffset(w, h)
         end
@@ -479,11 +434,10 @@ function UI:GetThemes()
     for k in pairs(THEMES) do out[#out+1] = k end
     return out
 end
-function UI:GetIcon(name)
-    return iconResult(name) ~= nil
-end
-function UI:GetIconPack() return self._iconPack end
+function UI:GetIcon(name) return PIXEL_ICONS[normalizePixelIcon(name)] ~= nil end
+function UI:GetIconPack() return nil end
 function UI:IsMobile() return viewport().X < 700 or UserInputService.TouchEnabled and viewport().X < 850 end
+function UI:RenderIcon(parent, name, position, size, color, z) return renderPixelIcon(parent, name, position, size, color, z) end
 
 function UI:Notify(config)
     config = config or {}
@@ -546,7 +500,7 @@ function UI:CreateWindow(config)
         ResetOnSpawn = false,
         IgnoreGuiInset = true,
         DisplayOrder = 2147483645,
-        ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+        ZIndexBehavior = Enum.ZIndexBehavior.Global,
     }, GuiParent)
     pcall(function() if syn and syn.protect_gui then syn.protect_gui(gui) end end)
     win._gui = gui
@@ -567,12 +521,12 @@ function UI:CreateWindow(config)
             ScaleType=Enum.ScaleType.Crop, ZIndex=0,
         }, shell)
         win._background = bg
-        local tint = make("Frame", {BackgroundColor3=C.canvas, BackgroundTransparency=0.55, Size=UDim2.fromScale(1,1), BorderSizePixel=0, ZIndex=1}, shell)
+        local tint = make("Frame", {BackgroundColor3=C.canvas, BackgroundTransparency=0.32, Size=UDim2.fromScale(1,1), BorderSizePixel=0, ZIndex=1}, shell)
         win._backgroundTint = tint
     end
 
     local top = make("Frame", {
-        Name="TopBar", BackgroundColor3=C.header, BorderSizePixel=0,
+        Name="TopBar", BackgroundColor3=C.header, BackgroundTransparency=0.06, BorderSizePixel=0,
         Size=UDim2.new(1,0,0,82), Position=UDim2.new(), ZIndex=20,
     }, shell)
     corner(top, 22); win._top = top
@@ -602,7 +556,7 @@ function UI:CreateWindow(config)
     min.Activated:Connect(function() win:Toggle() end)
 
     local rail = make("ScrollingFrame", {
-        Name="Rail", BackgroundColor3=C.rail, BorderSizePixel=0,
+        Name="Rail", BackgroundColor3=C.rail, BackgroundTransparency=0.08, BorderSizePixel=0,
         Position=UDim2.fromOffset(0,82), Size=UDim2.new(0,178,1,-82),
         CanvasSize=UDim2.new(), AutomaticCanvasSize=Enum.AutomaticSize.Y,
         ScrollBarThickness=2, ScrollBarImageColor3=C.muted, ScrollingDirection=Enum.ScrollingDirection.Y,
@@ -612,7 +566,7 @@ function UI:CreateWindow(config)
     local divider=make("Frame",{BackgroundColor3=C.lineSoft,BorderSizePixel=0,Position=UDim2.new(1,-1,0,0),Size=UDim2.new(0,1,1,0),ZIndex=15},rail)
 
     local content = make("Frame", {
-        Name="Content", BackgroundColor3=C.canvas, BackgroundTransparency=0.12, BorderSizePixel=0,
+        Name="Content", BackgroundColor3=C.canvas, BackgroundTransparency=0.52, BorderSizePixel=0,
         Position=UDim2.fromOffset(178,82), Size=UDim2.new(1,-178,1,-82), ClipsDescendants=true, ZIndex=10,
     }, shell)
     win._content=content
@@ -630,6 +584,7 @@ function UI:CreateWindow(config)
         pcall(function() shell.BackgroundColor3=C.canvas; top.BackgroundColor3=C.header; rail.BackgroundColor3=C.rail end)
         for _, t in ipairs(self._tabs) do
             if t._btn then t._btn.BackgroundColor3 = (t == self._selected and C.accentSoft or C.row) end
+            if t._icon then pixelIconSetColor(t._icon, (t == self._selected and C.accent or C.muted)) end
         end
     end
 
@@ -653,7 +608,7 @@ function Window:CreateTab(nameOrConfig, icon)
     local ico=renderIcon(tabBtn,iconName,UDim2.fromOffset(12,12),UDim2.fromOffset(24,24),C.muted,18)
     local lbl=text(tabBtn,title,12,C.secondary,true); lbl.Position=UDim2.fromOffset(46,0); lbl.Size=UDim2.new(1,-54,1,0); lbl.ZIndex=18
 
-    local page=make("ScrollingFrame",{Name="Page_"..cleanName(title),BackgroundTransparency=1,BorderSizePixel=0,Size=UDim2.fromScale(1,1),CanvasSize=UDim2.new(),AutomaticCanvasSize=Enum.AutomaticSize.Y,ScrollBarThickness=4,ScrollBarImageColor3=C.muted,ScrollingDirection=Enum.ScrollingDirection.Y,Visible=false,ZIndex=11},self._content)
+    local page=make("ScrollingFrame",{Name="Page_"..cleanName(title),BackgroundTransparency=1,BorderSizePixel=0,Size=UDim2.fromScale(1,1),CanvasSize=UDim2.new(),AutomaticCanvasSize=Enum.AutomaticSize.Y,ScrollBarThickness=4,ScrollBarImageColor3=C.muted,ScrollingDirection=Enum.ScrollingDirection.Y,Visible=false,ZIndex=11,ClipsDescendants=false},self._content)
     padding(page,16,16,16,30)
 
     local tab=setmetatable({_window=self,_btn=tabBtn,_icon=ico,_label=lbl,_page=page,_title=title,_iconName=iconName,_order=0,_sections={},_controls={},_settingsBento=(string.lower(title)=="settings")},Tab)
@@ -679,9 +634,8 @@ function Window:SelectTab(index)
         t._page.Visible=on
         t._btn.BackgroundColor3=on and C.accentSoft or C.row
         t._label.TextColor3=on and C.text or C.secondary
-        if t._icon and t._icon:IsA("GuiObject") then
-            local img=t._icon:FindFirstChildWhichIsA("ImageLabel",true)
-            if img then img.ImageColor3=on and C.accent or C.muted end
+        if t._icon then
+            pixelIconSetColor(t._icon,on and C.accent or C.muted)
         end
     end
 end
@@ -722,11 +676,11 @@ end
 function Window:CreateFloatingToggle(config)
     config=config or {}
     if self._floatingGui then pcall(function() self._floatingGui:Destroy() end) end
-    local sg=make("ScreenGui",{Name="KhfreshFloatingGui",ResetOnSpawn=false,IgnoreGuiInset=true,DisplayOrder=2147483630,ZIndexBehavior=Enum.ZIndexBehavior.Sibling},GuiParent)
+    local sg=make("ScreenGui",{Name="KhfreshFloatingGui",ResetOnSpawn=false,IgnoreGuiInset=true,DisplayOrder=2147483630,ZIndexBehavior=Enum.ZIndexBehavior.Global},GuiParent)
     self._floatingGui=sg
     local btn=make("TextButton",{Text="",BackgroundColor3=C.shell,BorderSizePixel=0,Size=UDim2.fromOffset(58,58),Position=UDim2.new(0,16,0.5,-29),AutoButtonColor=false,Active=true,ZIndex=10},sg)
     corner(btn,19); outline(btn,C.line,0.2,1)
-    renderIcon(btn,"volleyball",UDim2.fromOffset(14,14),UDim2.fromOffset(30,30),C.accent,12)
+    renderPixelIcon(btn,"volleyball",UDim2.fromOffset(13,13),UDim2.fromOffset(32,32),C.accent,12)
     btn.Activated:Connect(function() self:Toggle() end)
     local scale=make("UIScale",{Scale=1},btn)
     btn.MouseEnter:Connect(function() tween(scale,Motion.fast,{Scale=1.06}) end)
@@ -775,19 +729,32 @@ end
 
 function Tab:_insertSection(section)
     self:_ensureHost()
+    local parent
     if self._settingsBento then
-        local side=section._side
-        if side=="left" then section._parent=self._columns[1]
-        elseif side=="right" then section._parent=self._columns[2]
-        else
-            self._settingsCounter += 1
-            section._parent=self._columns[(((self._settingsCounter-1)%2)+1)]
+        local columns=self._settingsColumns or self._columns
+        if not columns or not columns[1] then
+            self._host,self._columns=makePageLayout(self)
+            self._settingsColumns=self._columns
+            columns=self._columns
         end
-        section._frame.Parent=section._parent
+        local side=section._side
+        if side=="left" then
+            parent=columns[1]
+        elseif side=="right" then
+            parent=columns[2] or columns[1]
+        else
+            self._settingsCounter=(self._settingsCounter or 0)+1
+            parent=columns[(((self._settingsCounter-1)%2)+1)] or columns[1]
+        end
     else
-        section._frame.Parent=self._columns[1]
+        parent=(self._columns and self._columns[1]) or self._host or self._page
     end
-    section._frame.LayoutOrder=#section._parent:GetChildren()
+    if not parent then
+        parent=self._page
+    end
+    section._parent=parent
+    section._frame.Parent=parent
+    section._frame.LayoutOrder=section._order or 1
     self:_layoutSettings()
 end
 
