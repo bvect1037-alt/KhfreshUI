@@ -19342,7 +19342,13 @@ function Library:AddDropdown(options: Options): Control
 	self:_theme(menu, "BackgroundColor3", "Surface2")
 	local menuLayout = make("UIListLayout", {SortOrder = Enum.SortOrder.LayoutOrder}, menu)
 	local value: any = options.Default
-	local function display() selectedLabel.Text = if value == nil or value == "" then options.Placeholder or "Select an option" else tostring(value) end end
+	local function display()
+		if value == nil or value == "" then
+			selectedLabel.Text = options.Placeholder or "Select an option"
+		else
+			selectedLabel.Text = tostring(value)
+		end
+	end
 	local function set(newValue: any, silent: boolean?)
 		for _, candidate in ipairs(values) do
 			if candidate == newValue then value = newValue break end
@@ -19355,7 +19361,11 @@ function Library:AddDropdown(options: Options): Control
 		open = newOpen
 		menu.Visible = open
 		card.Size = UDim2.new(1, 0, 0, open and 82 + #values * 28 or 78)
-		arrow.Rotation = if open then 180 else 0
+		if open then
+			arrow.Rotation = 180
+		else
+			arrow.Rotation = 0
+		end
 	end
 	for index, candidate in ipairs(values) do
 		local item = make("TextButton", {AutoButtonColor = false, BackgroundTransparency = 1, LayoutOrder = index, Size = UDim2.new(1, 0, 0, 28), Text = tostring(candidate), TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left}, menu)
@@ -19389,7 +19399,11 @@ function Library:AddMultiDropdown(options: Options): Control
 	local function render()
 		local names = {}
 		for _, item in ipairs(values) do if selected[item] then table.insert(names, tostring(item)) end end
-		label.Text = if #names == 0 then options.Placeholder or "Select options" else table.concat(names, ", ")
+		if #names == 0 then
+			label.Text = options.Placeholder or "Select options"
+		else
+			label.Text = table.concat(names, ", ")
+		end
 	end
 	local function set(newValue: any, silent: boolean?)
 		if type(newValue) == "table" then
