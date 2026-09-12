@@ -18599,6 +18599,7 @@ function Library:_resize()
 	if self.Window.Visible then
 		self.Window.Size = UDim2.fromOffset(width, height)
 	end
+	self:_updateHandlePositions()
 end
 
 function Library:_setWindowPosition()
@@ -18610,6 +18611,28 @@ function Library:_setWindowPosition()
 		local x = clamp(self.Window.Position.X.Offset, math.min(-(viewport.X - width - 14), -14), -14)
 		local y = clamp(self.Window.Position.Y.Offset, 14, math.max(14, viewport.Y - height - 14))
 		self.Window.Position = UDim2.new(1, x, 0, y)
+	end
+
+	function Library:_updateHandlePositions()
+		if not self.Window or not self.Window.Parent then
+			return
+		end
+		if self.DragFooter and self.DragFooter.Parent then
+			local position = self.Window.AbsolutePosition
+			local size = self.Window.AbsoluteSize
+			self.DragFooter.Position = UDim2.fromOffset(
+				position.X + math.floor(size.X / 2) - math.floor(self.DragFooter.AbsoluteSize.X / 2),
+				position.Y + size.Y + 8
+			)
+		end
+		if self.ResizeGrip and self.ResizeGrip.Parent then
+			local position = self.Window.AbsolutePosition
+			local size = self.Window.AbsoluteSize
+			self.ResizeGrip.Position = UDim2.fromOffset(
+				position.X + size.X - self.ResizeGrip.AbsoluteSize.X - 2,
+				position.Y + size.Y + 4
+			)
+		end
 	end
 end
 
@@ -18655,6 +18678,7 @@ local function draggable(library: any, target: GuiObject, handle: GuiObject)
 				library._targetWidth = clamp(startWidth + delta.X, 420, 1100)
 				library._targetHeight = clamp(startHeight + delta.Y, 320, 850)
 				library:_resize()
+				library:_updateHandlePositions()
 			end)
 		end
 		dragging = true
@@ -18679,6 +18703,7 @@ local function draggable(library: any, target: GuiObject, handle: GuiObject)
 			startPosition.Y.Scale, startPosition.Y.Offset + delta.Y
 		)
 		library:_setWindowPosition()
+		library:_updateHandlePositions()
 	end)
 end
 
@@ -18732,7 +18757,16 @@ function Library.new(options: Options?): any
 		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 	}, player:WaitForChild("PlayerGui"))
 	self.Gui = gui
-	self:SetPerformanceProfile(config.PerformanceProfile or config.Profile or (UserInputService.TouchEnabled and not UserInputService.MouseEnabled and "Mobile" or "PC"))
+	local requestedProfile = tostring(config.PerformanceProfile or config.Profile or "PC"):lower()
+	if requestedProfile == "mobile" or requestedProfile == "phone" or requestedProfile == "touch" then
+		self.PerformanceProfile = "Mobile"
+		self._deferIcons = true
+		self._notificationLimit = 2
+	else
+		self.PerformanceProfile = "PC"
+		self._deferIcons = false
+		self._notificationLimit = 4
+	end
 
 	local toggle = make("TextButton", {
 		AnchorPoint = Vector2.new(1, 1),
@@ -18785,7 +18819,7 @@ function Library.new(options: Options?): any
 		BackgroundTransparency = 1,
 		Name = "Topbar",
 		Size = UDim2.new(1, 0, 0, 68),
-	}, window)
+	}, gui)
 	local topLogo = makeLogo(topbar, self._title, self.Theme.Accent)
 	topLogo.Position = UDim2.fromOffset(18, 15)
 	local title = make("TextLabel", {
@@ -18829,7 +18863,19 @@ function Library.new(options: Options?): any
 	local minimizeIcon = self:_addIcon(minimize, "Minus", 18)
 	minimizeIcon.Position = UDim2.fromOffset(6, 6)
 	self:_connect(minimize.Activated, function() self:SetVisible(false) end)
-	-- Drag only from the dedicated footer, keeping cards and controls stationary.
+	local topDragHandle = make("Frame", {
+		Active = true,
+		BackgroundTransparency = 1,
+		Name = "TopDragHandle",
+		Position = UDim2.fromOffset(0, 0),
+		Size = UDim2.new(1, -96, 1, 0),
+		ZIndex = 2,
+	}, topbar)
+	topLogo.ZIndex = 3
+	title.ZIndex = 3
+	subtitle.ZIndex = 3
+	draggable(self, window, topDragHandle)
+	self.TopDragHandle = topDragHandle
 
 	local tabsBar = make("ScrollingFrame", {
 		Active = true,
@@ -18855,7 +18901,7 @@ function Library.new(options: Options?): any
 		BackgroundTransparency = 1,
 		Name = "ContentHost",
 		Position = UDim2.fromOffset(0, 68),
-		Size = UDim2.new(1, 0, 1, -98),
+		Size = UDim2.new(1, 0, 1, -68),
 	}, window)
 	self._contentHost = content
 	self._contentTop = 68
@@ -18863,40 +18909,69 @@ function Library.new(options: Options?): any
 	local dragFooter = make("TextButton", {
 		Active = true,
 		AutoButtonColor = false,
-		BackgroundColor3 = self.Theme.Surface2,
-		BackgroundTransparency = 0.35,
+		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
 		Name = "DragFooter",
-		Position = UDim2.new(0, 16, 1, -25),
-		Size = UDim2.new(1, -56, 0, 17),
-		Text = "  BENTO  •  DRAG TO MOVE",
-		TextColor3 = self.Theme.Muted,
-		TextSize = 9,
-		TextXAlignment = Enum.TextXAlignment.Left,
+		Position = UDim2.fromOffset(0, 0),
+		Size = UDim2.fromOffset(230, 26),
+		Text = "",
 		ZIndex = 15,
-	}, window)
-	rounded(dragFooter, 8)
-	self:_theme(dragFooter, "BackgroundColor3", "Surface2")
-	self:_theme(dragFooter, "TextColor3", "Muted")
+	}, gui)
+	local dragPill = make("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		BackgroundColor3 = Color3.fromRGB(205, 207, 214),
+		BorderSizePixel = 0,
+		Name = "DragPill",
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromOffset(150, 5),
+		ZIndex = 16,
+	}, dragFooter)
+	rounded(dragPill, 3)
+	self:_theme(dragPill, "BackgroundColor3", "Text")
 	draggable(self, window, dragFooter)
 	self.DragFooter = dragFooter
+	self.DragPill = dragPill
 
 	local resizeGrip = make("TextButton", {
 		Active = true,
 		AutoButtonColor = false,
-		BackgroundColor3 = self.Theme.Surface3,
+		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
 		Name = "ResizeGrip",
-		Position = UDim2.new(1, -34, 1, -25),
-		Size = UDim2.fromOffset(26, 17),
-		Text = "⌟",
-		TextColor3 = self.Theme.Muted,
-		TextSize = 16,
+		Position = UDim2.fromOffset(0, 0),
+		Size = UDim2.fromOffset(48, 42),
 		ZIndex = 16,
-	}, window)
-	rounded(resizeGrip, 7)
-	self:_theme(resizeGrip, "BackgroundColor3", "Surface3")
-	self:_theme(resizeGrip, "TextColor3", "Muted")
+	}, gui)
+	local gripBarA = make("Frame", {
+		AnchorPoint = Vector2.new(1, 1),
+		BackgroundColor3 = Color3.fromRGB(155, 157, 165),
+		BorderSizePixel = 0,
+		Position = UDim2.new(1, -10, 1, -12),
+		Rotation = -45,
+		Size = UDim2.fromOffset(18, 2),
+		ZIndex = 17,
+	}, resizeGrip)
+	local gripBarB = make("Frame", {
+		AnchorPoint = Vector2.new(1, 1),
+		BackgroundColor3 = Color3.fromRGB(155, 157, 165),
+		BorderSizePixel = 0,
+		Position = UDim2.new(1, -10, 1, -18),
+		Rotation = -45,
+		Size = UDim2.fromOffset(12, 2),
+		ZIndex = 17,
+	}, resizeGrip)
+	local gripBarC = make("Frame", {
+		AnchorPoint = Vector2.new(1, 1),
+		BackgroundColor3 = Color3.fromRGB(155, 157, 165),
+		BorderSizePixel = 0,
+		Position = UDim2.new(1, -10, 1, -24),
+		Rotation = -45,
+		Size = UDim2.fromOffset(6, 2),
+		ZIndex = 17,
+	}, resizeGrip)
+	self:_theme(gripBarA, "BackgroundColor3", "Muted")
+	self:_theme(gripBarB, "BackgroundColor3", "Muted")
+	self:_theme(gripBarC, "BackgroundColor3", "Muted")
 	resizable(self, window, resizeGrip)
 	self.ResizeGrip = resizeGrip
 
@@ -18918,19 +18993,21 @@ function Library.new(options: Options?): any
 
 	self:_connect(toggle.Activated, function() self:SetVisible(not self._visible) end)
 	self:_connect(toggle.MouseEnter, function()
-		play(halo, {BackgroundTransparency = 0.67, Size = UDim2.fromOffset(64, 64)}, MOTION.Spring)
+		play(halo, {BackgroundTransparency = 0.67}, MOTION.Fast)
 		play(toggle, {BackgroundColor3 = self.Theme.Surface3}, MOTION.Fast)
 	end)
 	self:_connect(toggle.MouseLeave, function()
-		play(halo, {BackgroundTransparency = 0.84, Size = UDim2.fromOffset(48, 48)}, MOTION.Smooth)
+		play(halo, {BackgroundTransparency = 0.84}, MOTION.Smooth)
 		play(toggle, {BackgroundColor3 = self.Theme.Surface2}, MOTION.Smooth)
 	end)
 	local camera = workspace.CurrentCamera
 	if camera then
 		self:_connect(camera:GetPropertyChangedSignal("ViewportSize"), function() self:_resize() end)
 	end
-	self:_resize()
-	self:AddTab({Name = "Main", Icon = "LayoutDashboard", Hidden = true})
+	local viewport = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(900, 650)
+	self._currentWidth = clamp(self._targetWidth, 320, math.max(320, viewport.X - 28))
+	self._currentHeight = clamp(self._targetHeight, 280, math.max(280, viewport.Y - 74))
+	self.Window.Size = UDim2.fromOffset(self._currentWidth, self._currentHeight)
 	return self
 end
 
@@ -19029,7 +19106,7 @@ function Library:AddTab(options: Options): any
 	if #self._tabs > 1 then
 		self._contentTop = 110
 		self._contentHost.Position = UDim2.fromOffset(0, self._contentTop)
-		self._contentHost.Size = UDim2.new(1, 0, 1, -self._contentTop - 30)
+		self._contentHost.Size = UDim2.new(1, 0, 1, -self._contentTop)
 	end
 	if options.Hidden ~= true or #self._tabs == 1 then
 		self:SelectTab(tab)
@@ -19054,7 +19131,18 @@ function Library:SelectTab(tabOrName: any)
 end
 
 function Library:_active(): any
-	return self._activeTab or self._tabs[1]
+	if self._activeTab then
+		return self._activeTab
+	end
+	if self._tabs[1] then
+		return self._tabs[1]
+	end
+	return {
+		Library = self,
+		Page = self._contentHost,
+		_controls = {},
+		_sections = {},
+	}
 end
 
 function Library:_card(options: Options, height: number?): Frame
@@ -21273,12 +21361,13 @@ function Library:SetWindowSize(width: number, height: number): self
 	self._targetWidth = math.max(320, width)
 	self._targetHeight = math.max(280, height)
 	self:_resize()
+	self:_updateHandlePositions()
 	return self
 end
 function Library:SetWindowPadding(padding: number): self
 	if self._contentHost then
 		self._contentHost.Position = UDim2.fromOffset(padding, self._contentTop or 8)
-		self._contentHost.Size = UDim2.new(1, -padding * 2, 1, -(self._contentTop or 8) - padding - 30)
+		self._contentHost.Size = UDim2.new(1, -padding * 2, 1, -(self._contentTop or 8) - padding)
 	end
 	return self
 end
