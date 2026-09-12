@@ -1099,7 +1099,7 @@ function Window:CreateTab(nameOrConfig, iconName)
         _scroll = scroll,
         _order = 0,
         _settingsSections = {},
-        _isSettings = string.lower(title) == "settings",
+        _settingsMode = string.lower(title) == "settings",
     }, Tab)
 
     if tab:_isSettings() then
