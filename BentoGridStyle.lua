@@ -1,12 +1,6 @@
 --[[
- _  __ _   _  ____ ____  _____ ____  _   _    _   _ _   _ ____
-| |/ /| | | | |  _ \| ____/ ___|| | | |  | | | | | | | __ )
-| ' / | |_| | |_  | |_) |  _| \___ \| |_| |  | |_| | | | |  _ \
-| . \ |  _  | |  _ <| |___ ___) |  _  |  |  _  | |_| | |_) |
-|_|\_\|_| |_| \_\_____|____/|_| |_|  |_| |_|\___/|____/
-
-     Khfresh UI  •  Bento Grid Style
-     Based on Bento  •  Japanese Modular Design
+  Khfresh Bento UI v2
+  True Bento Grid layout • Lucide icons
 ]]
 
 local TweenService = game:GetService("TweenService")
@@ -253,7 +247,6 @@ end
 
 -- ========== LUCIDE ICONS ==========
 local Lucide = { ready = false, pack = nil }
-local ICON_ALIAS = {
 local ICON_ALIAS = {
     ["dashboard"] = "layout-dashboard",
     ["layout"] = "layout-dashboard",
