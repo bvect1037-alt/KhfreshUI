@@ -1,141 +1,121 @@
---[[
-    Khfresh Hub - BentoGridStyle
-    Purpose: dedicated UI library for Khfresh Hub.
-    The previous library is used only as an API/layout reference.
-    This file contains no feature logic from another hub and no branded asset.
-
-    Icons: Footagesus/Icons Lucide pack, resolved by icon name at runtime.
-    Main API is intentionally shaped around the Khfresh Hub source.
-]]
+--// Khfresh BentoGridStyle
+--// UI library rebuilt specifically for Khfresh Hub.
+--// The old UI source is used only as an API/layout reference.
+--// No old hub features/assets are embedded here.
 
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
-local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 local HttpService = game:GetService("HttpService")
 
 local LocalPlayer = Players.LocalPlayer
 
-local function getGuiParent()
+local function resolveParent()
     local ok, parent = pcall(function()
         if type(gethui) == "function" then
             local h = gethui()
             if h then return h end
         end
+        return game:GetService("CoreGui")
     end)
     if ok and parent then return parent end
-    local ok2, core = pcall(function() return game:GetService("CoreGui") end)
-    if ok2 and core then return core end
-    return LocalPlayer and LocalPlayer:FindFirstChildOfClass("PlayerGui")
+    return LocalPlayer:WaitForChild("PlayerGui")
 end
 
-local GUI_PARENT = getGuiParent()
+local GuiParent = resolveParent()
 
-local Library = {
+local UI = {
+    _version = "4.0.0-khfresh-hub",
     _windows = {},
-    _version = "3.0.0-khfresh-bento-lucide",
-    _notificationGui = nil,
-    _notificationHost = nil,
+    _notifyGui = nil,
     _iconPack = nil,
+    _iconReady = false,
 }
 
--- ================================================================
+--==============================================================
 -- THEME
--- ================================================================
+--==============================================================
 local THEMES = {
     Bento = {
-        Canvas = Color3.fromRGB(15, 17, 22),
-        Shell = Color3.fromRGB(21, 24, 30),
-        Rail = Color3.fromRGB(18, 20, 26),
-        Card = Color3.fromRGB(27, 30, 38),
-        Card2 = Color3.fromRGB(31, 34, 43),
-        Raised = Color3.fromRGB(36, 40, 50),
-        Hover = Color3.fromRGB(42, 47, 59),
-        Pressed = Color3.fromRGB(49, 55, 68),
-        Line = Color3.fromRGB(54, 60, 73),
-        Accent = Color3.fromRGB(103, 193, 255),
-        AccentSoft = Color3.fromRGB(38, 76, 106),
-        Text = Color3.fromRGB(239, 242, 248),
-        Secondary = Color3.fromRGB(177, 184, 200),
-        Muted = Color3.fromRGB(116, 124, 142),
-        Success = Color3.fromRGB(113, 218, 159),
-        Danger = Color3.fromRGB(244, 106, 119),
+        canvas = Color3.fromRGB(15, 17, 21),
+        shell = Color3.fromRGB(20, 23, 29),
+        rail = Color3.fromRGB(17, 20, 25),
+        header = Color3.fromRGB(24, 27, 34),
+        card = Color3.fromRGB(25, 29, 36),
+        row = Color3.fromRGB(29, 33, 41),
+        rowHover = Color3.fromRGB(35, 40, 49),
+        rowPressed = Color3.fromRGB(43, 49, 60),
+        line = Color3.fromRGB(53, 60, 73),
+        lineSoft = Color3.fromRGB(39, 44, 53),
+        text = Color3.fromRGB(242, 245, 250),
+        secondary = Color3.fromRGB(181, 188, 201),
+        muted = Color3.fromRGB(118, 127, 143),
+        accent = Color3.fromRGB(105, 190, 255),
+        accentSoft = Color3.fromRGB(38, 74, 106),
+        success = Color3.fromRGB(102, 215, 155),
+        danger = Color3.fromRGB(244, 112, 123),
+        warning = Color3.fromRGB(243, 193, 103),
     },
     Dark = {
-        Canvas = Color3.fromRGB(11, 12, 16),
-        Shell = Color3.fromRGB(17, 19, 24),
-        Rail = Color3.fromRGB(14, 15, 20),
-        Card = Color3.fromRGB(23, 26, 32),
-        Card2 = Color3.fromRGB(27, 30, 37),
-        Raised = Color3.fromRGB(32, 35, 43),
-        Hover = Color3.fromRGB(39, 43, 52),
-        Pressed = Color3.fromRGB(47, 52, 63),
-        Line = Color3.fromRGB(47, 52, 62),
-        Accent = Color3.fromRGB(96, 183, 255),
-        AccentSoft = Color3.fromRGB(35, 69, 97),
-        Text = Color3.fromRGB(236, 239, 246),
-        Secondary = Color3.fromRGB(168, 175, 191),
-        Muted = Color3.fromRGB(109, 117, 135),
-        Success = Color3.fromRGB(104, 204, 149),
-        Danger = Color3.fromRGB(238, 96, 110),
+        canvas = Color3.fromRGB(12, 13, 16), shell = Color3.fromRGB(18, 20, 24),
+        rail = Color3.fromRGB(15, 16, 20), header = Color3.fromRGB(21, 24, 29),
+        card = Color3.fromRGB(22, 25, 30), row = Color3.fromRGB(26, 29, 35),
+        rowHover = Color3.fromRGB(32, 36, 43), rowPressed = Color3.fromRGB(39, 44, 53),
+        line = Color3.fromRGB(47, 52, 62), lineSoft = Color3.fromRGB(35, 39, 47),
+        text = Color3.fromRGB(238, 241, 247), secondary = Color3.fromRGB(171, 177, 190),
+        muted = Color3.fromRGB(108, 115, 130), accent = Color3.fromRGB(96, 182, 247),
+        accentSoft = Color3.fromRGB(33, 63, 91), success = Color3.fromRGB(98, 206, 148),
+        danger = Color3.fromRGB(238, 102, 115), warning = Color3.fromRGB(236, 184, 92),
     },
 }
 
-local CurrentTheme = "Bento"
+local currentTheme = "Bento"
 local C = {}
-for k, v in pairs(THEMES.Bento) do C[k] = v end
 
-function Library:SetTheme(name)
-    name = tostring(name or "Bento")
+local function applyTheme(name)
     if not THEMES[name] then name = "Bento" end
-    CurrentTheme = name
+    currentTheme = name
     for k, v in pairs(THEMES[name]) do C[k] = v end
-    for _, window in ipairs(self._windows) do
-        if window and window._alive then
-            pcall(function() window:_refreshTheme() end)
-        end
-    end
 end
+applyTheme("Bento")
 
-function Library:GetTheme() return CurrentTheme end
-function Library:GetThemes()
-    local out = {}
-    for name in pairs(THEMES) do out[#out+1] = name end
-    table.sort(out)
-    return out
-end
+local Motion = {
+    fast = TweenInfo.new(0.10, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+    base = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+    smooth = TweenInfo.new(0.25, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
+    spring = TweenInfo.new(0.32, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+}
 
--- ================================================================
--- HELPERS
--- ================================================================
+--==============================================================
+-- COMMON HELPERS
+--==============================================================
 local function make(className, props, parent)
     local obj = Instance.new(className)
     if props then
         for k, v in pairs(props) do
             local ok = pcall(function() obj[k] = v end)
-            if not ok then
-                -- Ignore optional properties that a specific Roblox build does not expose.
-            end
+            if not ok then end
         end
     end
     if parent then obj.Parent = parent end
     return obj
 end
 
-local function round(parent, radius)
-    return make("UICorner", { CornerRadius = UDim.new(0, radius or 14) }, parent)
+local function corner(parent, radius)
+    return make("UICorner", { CornerRadius = UDim.new(0, radius or 12) }, parent)
 end
 
 local function outline(parent, color, transparency, thickness)
     return make("UIStroke", {
-        Color = color or C.Line,
-        Transparency = transparency == nil and 0.55 or transparency,
+        Color = color or C.line,
+        Transparency = transparency == nil and 0.45 or transparency,
         Thickness = thickness or 1,
         ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
     }, parent)
 end
 
-local function addPadding(parent, l, r, t, b)
+local function padding(parent, l, r, t, b)
     return make("UIPadding", {
         PaddingLeft = UDim.new(0, l or 0),
         PaddingRight = UDim.new(0, r or 0),
@@ -144,197 +124,245 @@ local function addPadding(parent, l, r, t, b)
     }, parent)
 end
 
+local function list(parent, gap)
+    return make("UIListLayout", {
+        Padding = UDim.new(0, gap or 8),
+        FillDirection = Enum.FillDirection.Vertical,
+        SortOrder = Enum.SortOrder.LayoutOrder,
+    }, parent)
+end
+
 local function tween(obj, info, props)
-    if not obj then return end
-    local ok, tw = pcall(function()
-        return TweenService:Create(obj, info or TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), props)
+    if not obj or not obj.Parent then return end
+    local ok, t = pcall(function()
+        return TweenService:Create(obj, info or Motion.base, props)
     end)
-    if ok and tw then tw:Play() return tw end
+    if ok and t then t:Play() return t end
 end
 
 local function text(parent, value, size, color, bold)
     return make("TextLabel", {
         BackgroundTransparency = 1,
         Text = tostring(value or ""),
-        TextColor3 = color or C.Text,
+        TextColor3 = color or C.text,
         TextSize = size or 13,
         Font = bold and Enum.Font.GothamMedium or Enum.Font.Gotham,
         TextXAlignment = Enum.TextXAlignment.Left,
         TextYAlignment = Enum.TextYAlignment.Center,
         TextTruncate = Enum.TextTruncate.AtEnd,
+        TextWrapped = false,
     }, parent)
 end
 
-local function button(parent, props)
-    props = props or {}
-    props.ClassName = nil
-    props.Text = props.Text or ""
-    props.AutoButtonColor = false
-    return make("TextButton", props, parent)
+local function button(parent, z)
+    return make("TextButton", {
+        Text = "",
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        AutoButtonColor = false,
+        Size = UDim2.fromScale(1, 1),
+        ZIndex = z or 50,
+    }, parent)
 end
 
-local function bindActivate(gui, callback)
-    if not gui or type(callback) ~= "function" then return end
-    if gui.Activated then
-        gui.Activated:Connect(function()
-            task.spawn(function() pcall(callback) end)
-        end)
-    else
-        gui.MouseButton1Click:Connect(function()
-            task.spawn(function() pcall(callback) end)
-        end)
-    end
+local function hoverRow(frame)
+    local base = frame.BackgroundColor3
+    frame.MouseEnter:Connect(function() tween(frame, Motion.fast, {BackgroundColor3 = C.rowHover}) end)
+    frame.MouseLeave:Connect(function() tween(frame, Motion.fast, {BackgroundColor3 = base}) end)
 end
 
-local function hoverButton(btn, normal, over)
-    if not btn then return end
-    normal = normal or btn.BackgroundColor3
-    over = over or C.Hover
-    btn.MouseEnter:Connect(function()
-        tween(btn, TweenInfo.new(0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundColor3 = over})
-    end)
-    btn.MouseLeave:Connect(function()
-        tween(btn, TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundColor3 = normal})
-    end)
+local function cleanName(s)
+    return tostring(s or "Element"):gsub("[^%w_]+", "_")
 end
 
-local function normalizeArray(values)
-    local out = {}
-    if type(values) ~= "table" then return out end
-    for _, value in ipairs(values) do
-        if type(value) == "table" then
-            value = value.Title or value.Name or value.Value or value.Text or value[1]
-        end
-        if value ~= nil then out[#out+1] = tostring(value) end
-    end
-    return out
-end
-
-local function viewport()
-    local cam = workspace.CurrentCamera
-    return cam and cam.ViewportSize or Vector2.new(1280, 720)
-end
-
--- ================================================================
+--==============================================================
 -- LUCIDE API
--- Uses the Footagesus icon runtime and the official Lucide pack.
--- ================================================================
-local Lucide = {
-    Loaded = false,
-    Loading = false,
-    Pack = nil,
-    URL = "https://raw.githubusercontent.com/Footagesus/Icons/main/Main-v2.lua",
-}
-
+--==============================================================
+-- Footagesus Icons exposes the Lucide catalog through Icon()/GetIcon().
+-- This is loaded at runtime so the library can use the large Lucide catalog
+-- rather than embedding a small hard-coded icon table.
 local function loadLucide()
-    if Lucide.Loaded then return true end
-    if Lucide.Loading then
-        local deadline = os.clock() + 6
-        while Lucide.Loading and os.clock() < deadline do task.wait() end
-        return Lucide.Loaded
-    end
-    Lucide.Loading = true
-    local ok, result = pcall(function()
-        local source = game:HttpGet(Lucide.URL)
-        local chunk = loadstring(source)
-        if not chunk then error("Lucide loader did not compile") end
-        local pack = chunk()
-        if type(pack) ~= "table" then error("Lucide loader returned invalid pack") end
-        pcall(function()
-            if pack.SetIconsType then pack:SetIconsType("lucide") end
-            if pack.SetIconsType then pack.SetIconsType("lucide") end
+    if UI._iconReady then return UI._iconPack end
+    local urls = {
+        "https://raw.githubusercontent.com/Footagesus/Icons/main/Main-v2.lua",
+        "https://raw.githubusercontent.com/Footagesus/Icons/main/Main.lua",
+    }
+    for _, url in ipairs(urls) do
+        local ok, body = pcall(function()
+            if game.HttpGetAsync then return game:HttpGetAsync(url) end
+            return game:HttpGet(url)
         end)
-        Lucide.Pack = pack
-        Lucide.Loaded = true
-    end)
-    Lucide.Loading = false
-    if not ok then
-        warn("[Khfresh] Lucide API load failed: " .. tostring(result))
+        if ok and type(body) == "string" and #body > 1000 and type(loadstring) == "function" then
+            local okChunk, fn = pcall(loadstring, body, "@KhfreshLucide")
+            if okChunk and type(fn) == "function" then
+                local okRun, pack = pcall(fn)
+                if okRun and type(pack) == "table" then
+                    pcall(function() if pack.SetIconsType then pack.SetIconsType("lucide") end end)
+                    UI._iconPack = pack
+                    UI._iconReady = true
+                    return pack
+                end
+            end
+        end
     end
-    return Lucide.Loaded
+    return nil
 end
 
 task.spawn(loadLucide)
 
-function Library:GetIcon(iconName)
-    if not loadLucide() then return nil end
-    local pack = Lucide.Pack
-    local name = tostring(iconName or "circle")
-    local ok, result = pcall(function()
-        if pack.GetIcon then return pack:GetIcon(name, "lucide") end
-        if pack.Icon then return pack:Icon(name, "lucide", false) end
-    end)
-    if ok then return result end
+local function iconResult(name)
+    local pack = UI._iconPack or loadLucide()
+    if not pack then return nil end
+    local candidates = { tostring(name or "circle"), tostring(name or "circle"):lower() }
+    for _, n in ipairs(candidates) do
+        local ok, result = pcall(function()
+            if pack.GetIcon then return pack.GetIcon(n) end
+            if pack.Icon then return pack.Icon(n, "lucide", false) end
+        end)
+        if ok and result then return result end
+    end
     return nil
 end
 
-function Library:IconExists(iconName)
-    return self:GetIcon(iconName) ~= nil
-end
-
-function Library:GetIconNames()
-    if not loadLucide() then return {} end
-    local pack = Lucide.Pack
-    local out = {}
-    local lucideSet = pack and pack.Icons and pack.Icons.lucide
-    if lucideSet and lucideSet.Icons then
-        for name in pairs(lucideSet.Icons) do out[#out+1] = name end
-    elseif lucideSet then
-        for name in pairs(lucideSet) do
-            if type(name) == "string" then out[#out+1] = name end
-        end
-    end
-    table.sort(out)
-    return out
-end
-
-local function setImageFromIcon(img, iconName)
-    if not img then return false end
-    local result = Library:GetIcon(iconName)
-    if type(result) == "string" then
-        img.Image = result
-        img.ImageRectSize = Vector2.new(0, 0)
-        img.ImageRectOffset = Vector2.new(0, 0)
-        return true
-    end
-    if type(result) == "table" then
-        local image = result[1]
-        local meta = result[2]
-        if type(image) == "number" then image = "rbxassetid://" .. tostring(image) end
-        if type(image) ~= "string" then return false end
-        img.Image = image
-        if type(meta) == "table" then
-            pcall(function() img.ImageRectSize = meta.ImageRectSize or Vector2.new(0, 0) end)
-            pcall(function() img.ImageRectOffset = meta.ImageRectPosition or Vector2.new(0, 0) end)
-        end
-        return true
-    end
-    return false
-end
-
-local function icon(parent, name, pos, size, color, z)
-    local img = make("ImageLabel", {
-        Name = "Lucide_" .. tostring(name or "circle"),
-        BackgroundTransparency = 1,
-        Size = size or UDim2.fromOffset(18, 18),
-        Position = pos or UDim2.fromOffset(0, 0),
-        ImageColor3 = color or C.Secondary,
-        ScaleType = Enum.ScaleType.Fit,
-        ZIndex = z or 10,
+local function drawLine(parent, x1, y1, x2, y2, color, thickness, z)
+    local dx, dy = x2 - x1, y2 - y1
+    local length = math.sqrt(dx * dx + dy * dy)
+    local midX, midY = (x1 + x2) / 2, (y1 + y2) / 2
+    local line = make("Frame", {
+        BorderSizePixel = 0, BackgroundColor3 = color or C.secondary,
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Position = UDim2.new(0, midX, 0, midY),
+        Size = UDim2.new(0, length, 0, thickness or 2),
+        Rotation = math.deg(math.atan2(dy, dx)),
+        ZIndex = z or 5,
     }, parent)
-    if not setImageFromIcon(img, name) then
-        task.spawn(function()
-            if loadLucide() and img.Parent then
-                setImageFromIcon(img, name)
-            end
-        end)
-    end
-    return img
+    return line
 end
 
--- ================================================================
+-- Vector fallbacks for controls that appear most frequently in this hub.
+-- The Lucide API remains the first choice; this fallback makes core controls
+-- readable even when an executor cannot load the remote icon pack.
+local function drawVectorFallback(parent, name, size, color, z)
+    local holder = make("Frame", {
+        BackgroundTransparency = 1,
+        Size = size or UDim2.fromOffset(20, 20),
+        ZIndex = z or 5,
+    }, parent)
+    local w, h = 20, 20
+    local n = tostring(name or "circle"):lower()
+    if n == "x" or n == "close" then
+        drawLine(holder, 5, 5, 15, 15, color, 2, z)
+        drawLine(holder, 15, 5, 5, 15, color, 2, z)
+    elseif n == "minus" then
+        drawLine(holder, 4, 10, 16, 10, color, 2, z)
+    elseif n == "plus" then
+        drawLine(holder, 4, 10, 16, 10, color, 2, z)
+        drawLine(holder, 10, 4, 10, 16, color, 2, z)
+    elseif n == "chevron-down" then
+        drawLine(holder, 5, 7, 10, 12, color, 2, z)
+        drawLine(holder, 10, 12, 15, 7, color, 2, z)
+    elseif n == "chevron-right" then
+        drawLine(holder, 7, 5, 13, 10, color, 2, z)
+        drawLine(holder, 13, 10, 7, 15, color, 2, z)
+    elseif n == "search" then
+        local c = make("Frame", {BackgroundTransparency=1, Position=UDim2.fromOffset(3,3), Size=UDim2.fromOffset(12,12), ZIndex=z or 5}, holder)
+        corner(c, 99); outline(c,color,0,2)
+        drawLine(holder, 13, 13, 18, 18, color, 2, z)
+    elseif n == "check" or n == "circle-check" then
+        local c = make("Frame", {BackgroundTransparency=1, Position=UDim2.fromOffset(2,2), Size=UDim2.fromOffset(16,16), ZIndex=z or 5}, holder)
+        corner(c,99); outline(c,color,0,2)
+        drawLine(holder, 5, 10, 9, 14, color, 2, z)
+        drawLine(holder, 9, 14, 15, 7, color, 2, z)
+    elseif n == "play" then
+        local tri = make("TextLabel", {BackgroundTransparency=1, Size=UDim2.fromScale(1,1), Text="▶", TextSize=13, Font=Enum.Font.GothamBold, TextColor3=color, ZIndex=z or 5}, holder)
+        tri.TextXAlignment = Enum.TextXAlignment.Center
+        tri.TextYAlignment = Enum.TextYAlignment.Center
+    elseif n == "settings" then
+        local c = make("Frame", {BackgroundTransparency=1, Position=UDim2.fromOffset(4,4), Size=UDim2.fromOffset(12,12), ZIndex=z or 5}, holder)
+        corner(c,99); outline(c,color,0,2)
+        local dot = make("Frame", {BackgroundColor3=color, BorderSizePixel=0, Position=UDim2.fromOffset(7,7), Size=UDim2.fromOffset(6,6), ZIndex=(z or 5)+1}, holder)
+        corner(dot,99)
+        for _, seg in ipairs({{10,1,2,5},{10,14,2,5},{1,9,5,2},{14,9,5,2}}) do drawLine(holder, seg[1],seg[2],seg[1]+seg[3],seg[2]+seg[4],color,2,z) end
+    elseif n == "volleyball" then
+        -- Procedural volleyball: circle + curved seams.
+        local ball = make("Frame", {BackgroundTransparency=1, Position=UDim2.fromOffset(2,2), Size=UDim2.fromOffset(16,16), ZIndex=z or 5}, holder)
+        corner(ball,99); outline(ball,color,0,1.8)
+        drawLine(holder, 5, 3, 7, 17, color, 1.6, z)
+        drawLine(holder, 3, 6, 17, 13, color, 1.6, z)
+        drawLine(holder, 4, 16, 16, 4, color, 1.6, z)
+    else
+        local c = make("Frame", {BackgroundTransparency=1, Position=UDim2.fromOffset(3,3), Size=UDim2.fromOffset(14,14), ZIndex=z or 5}, holder)
+        corner(c,99); outline(c,color,0,1.7)
+        local d = make("Frame", {BackgroundColor3=color, BorderSizePixel=0, Position=UDim2.fromOffset(6,6), Size=UDim2.fromOffset(6,6), ZIndex=(z or 5)+1}, holder)
+        corner(d,99)
+    end
+    return holder
+end
+
+local function renderIcon(parent, iconName, position, size, color, z)
+    local holder = make("Frame", {
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        Position = position or UDim2.fromOffset(0, 0),
+        Size = size or UDim2.fromOffset(20, 20),
+        ZIndex = z or 5,
+    }, parent)
+
+    local result = iconResult(iconName)
+    if result then
+        local imageId = result[1]
+        local meta = result[2]
+        if type(imageId) == "string" then
+            local img = make("ImageLabel", {
+                BackgroundTransparency = 1,
+                Size = UDim2.fromScale(1, 1),
+                Image = imageId,
+                ImageColor3 = color or C.secondary,
+                ScaleType = Enum.ScaleType.Fit,
+                ZIndex = z or 5,
+            }, holder)
+            if type(meta) == "table" then
+                if meta.ImageRectSize then img.ImageRectSize = meta.ImageRectSize end
+                if meta.ImageRectPosition then img.ImageRectOffset = meta.ImageRectPosition end
+            end
+            if meta and type(meta.Parts) == "table" then
+                for index, part in ipairs(meta.Parts) do
+                    local partResult = iconResult(part)
+                    if partResult then
+                        make("ImageLabel", {
+                            BackgroundTransparency = 1,
+                            Size = UDim2.fromScale(1, 1),
+                            Image = partResult[1],
+                            ImageRectSize = partResult[2] and partResult[2].ImageRectSize or Vector2.zero,
+                            ImageRectOffset = partResult[2] and partResult[2].ImageRectPosition or Vector2.zero,
+                            ImageColor3 = color or C.secondary,
+                            ZIndex = (z or 5) + index,
+                        }, holder)
+                    end
+                end
+            end
+            return holder
+        end
+    end
+
+    holder:ClearAllChildren()
+    local fallback = drawVectorFallback(holder, iconName, size, color, z)
+    fallback.Position = UDim2.fromScale(0, 0)
+    return holder
+end
+
+-- Retry icons after async pack initialization.
+task.spawn(function()
+    for _ = 1, 30 do
+        task.wait(0.2)
+        if UI._iconReady then break end
+        pcall(loadLucide)
+    end
+end)
+
+--==============================================================
 -- WINDOW / TAB / SECTION
--- ================================================================
+--==============================================================
 local Window = {}
 Window.__index = Window
 local Tab = {}
@@ -342,933 +370,664 @@ Tab.__index = Tab
 local Section = {}
 Section.__index = Section
 
-local function setThemeRecursive(window)
-    if not window or not window._alive then return end
-    -- Keep theme updates explicit for primary surfaces. Individual controls are updated as they are created.
-    pcall(function() window._shell.BackgroundColor3 = C.Canvas end)
-    pcall(function() window._body.BackgroundColor3 = C.Canvas end)
-    pcall(function() window._rail.BackgroundColor3 = C.Rail end)
-    pcall(function() window._top.BackgroundColor3 = C.Shell end)
+local function viewport()
+    local cam = workspace.CurrentCamera
+    return cam and cam.ViewportSize or Vector2.new(1280, 720)
 end
 
-function Window:_refreshTheme()
-    setThemeRecursive(self)
-    for _, tab in ipairs(self._tabs) do
-        for _, section in ipairs(tab._sections) do
-            pcall(function() section:_refreshTheme() end)
+local function computeSize(requested)
+    local vp = viewport()
+    local w = math.clamp(requested and requested.X.Offset or 760, 520, math.max(520, vp.X - 24))
+    local h = math.clamp(requested and requested.Y.Offset or 540, 420, math.max(420, vp.Y - 24))
+    return UDim2.fromOffset(w, h)
+end
+
+local function installResponsive(win)
+    local camera = workspace.CurrentCamera
+    local function update()
+        if not win._shell or not win._shell.Parent then return end
+        local vp = viewport()
+        local mobile = vp.X < 700 or UserInputService.TouchEnabled and vp.X < 850
+        win._mobile = mobile
+        if mobile then
+            win._shell.Size = UDim2.new(1, -16, 1, -16)
+            win._shell.Position = UDim2.fromScale(0.5, 0.5)
+            win._rail.Size = UDim2.new(0, 66, 1, -win._topHeight)
+            win._content.Position = UDim2.fromOffset(66, win._topHeight)
+            win._content.Size = UDim2.new(1, -66, 1, -win._topHeight)
+            if win._logo then
+                win._logo.Size = UDim2.fromOffset(38, 38)
+                win._logo.Position = UDim2.fromOffset(10, 8)
+            end
+            if win._brandText then win._brandText.Visible = false end
+            if win._authorText then win._authorText.Visible = false end
+            for _, tab in ipairs(win._tabs) do
+                if tab._label then tab._label.Visible = false end
+                if tab._icon then tab._icon.Position = UDim2.new(0.5, -10, 0.5, -10) end
+            end
+        else
+            local requested = win._requestedSize or UDim2.fromOffset(760, 540)
+            win._shell.Size = computeSize(requested)
+            win._rail.Size = UDim2.fromOffset(win._railWidth, 1)
+            win._content.Position = UDim2.fromOffset(win._railWidth, win._topHeight)
+            win._content.Size = UDim2.new(1, -win._railWidth, 1, -win._topHeight)
+            if win._brandText then win._brandText.Visible = true end
+            if win._authorText then win._authorText.Visible = true end
+            for _, tab in ipairs(win._tabs) do
+                if tab._label then tab._label.Visible = true end
+                if tab._icon then tab._icon.Position = UDim2.fromOffset(12, 12) end
+            end
         end
+        if win._settingsTab then win:_layoutSettings() end
+    end
+    if camera then
+        table.insert(win._connections, camera:GetPropertyChangedSignal("ViewportSize"):Connect(update))
+    end
+    update()
+end
+
+local function installDragAndResize(win)
+    local shell = win._shell
+    local function startMove(input)
+        if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
+        win._moving = true
+        win._moveStart = input.Position
+        win._moveBase = shell.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then win._moving = false end
+        end)
+    end
+
+    win._dragHandle.InputBegan:Connect(startMove)
+    win._top.InputBegan:Connect(startMove)
+
+    table.insert(win._connections, UserInputService.InputChanged:Connect(function(input)
+        if win._moving and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - win._moveStart
+            shell.Position = UDim2.new(win._moveBase.X.Scale, win._moveBase.X.Offset + delta.X, win._moveBase.Y.Scale, win._moveBase.Y.Offset + delta.Y)
+        end
+        if win._resizing and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - win._resizeStart
+            local old = win._resizeBase
+            local vp = viewport()
+            local w = math.clamp(old.X.Offset + delta.X, 520, math.max(520, vp.X - 24))
+            local h = math.clamp(old.Y.Offset + delta.Y, 420, math.max(420, vp.Y - 24))
+            shell.Size = UDim2.fromOffset(w, h)
+            win._requestedSize = UDim2.fromOffset(w, h)
+        end
+    end))
+    win._resizeHandle.InputBegan:Connect(function(input)
+        if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
+        win._resizing = true
+        win._resizeStart = input.Position
+        win._resizeBase = shell.Size
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then win._resizing = false end
+        end)
+    end)
+end
+
+function UI:SetTheme(name)
+    applyTheme(name)
+    for _, win in ipairs(self._windows) do
+        if win and win.ApplyTheme then pcall(function() win:ApplyTheme() end) end
     end
 end
+function UI:GetTheme() return currentTheme end
+function UI:GetThemes()
+    local out = {}
+    for k in pairs(THEMES) do out[#out+1] = k end
+    return out
+end
+function UI:GetIcon(name)
+    return iconResult(name) ~= nil
+end
+function UI:GetIconPack() return self._iconPack end
+function UI:IsMobile() return viewport().X < 700 or UserInputService.TouchEnabled and viewport().X < 850 end
 
-function Section:_refreshTheme()
-    if not self._alive then return end
-    pcall(function() self._frame.BackgroundColor3 = C.Card end)
-    pcall(function() self._title.TextColor3 = C.Text end)
+function UI:Notify(config)
+    config = config or {}
+    local host = self._notifyGui
+    if not host or not host.Parent then
+        host = make("ScreenGui", {
+            Name = "KhfreshNotify",
+            ResetOnSpawn = false,
+            IgnoreGuiInset = true,
+            DisplayOrder = 2147483640,
+            ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+        }, GuiParent)
+        self._notifyGui = host
+    end
+    local wrapper = host:FindFirstChild("Wrapper")
+    if not wrapper then
+        wrapper = make("Frame", {BackgroundTransparency=1, Size=UDim2.fromScale(1,1)}, host)
+        local lay = list(wrapper, 8)
+        lay.HorizontalAlignment = Enum.HorizontalAlignment.Right
+        lay.VerticalAlignment = Enum.VerticalAlignment.Bottom
+        padding(wrapper, 0, 16, 0, 16)
+    end
+    local card = make("Frame", {
+        BackgroundColor3 = C.shell, BorderSizePixel=0, Size=UDim2.fromOffset(320, 72), LayoutOrder=-math.floor(os.clock()*1000),
+    }, wrapper)
+    corner(card, 14); outline(card,C.line,0.25,1)
+    renderIcon(card, config.Icon or "info", UDim2.fromOffset(14,18), UDim2.fromOffset(26,26), C.accent, 5)
+    local title = text(card, config.Title or "Khfresh", 13, C.text, true)
+    title.Position = UDim2.fromOffset(50,9); title.Size = UDim2.new(1,-60,0,20)
+    local desc = text(card, config.Content or config.Message or "", 11, C.secondary, false)
+    desc.Position = UDim2.fromOffset(50,31); desc.Size = UDim2.new(1,-60,0,32); desc.TextWrapped = true
+    task.delay(tonumber(config.Duration) or 3, function()
+        if card.Parent then
+            tween(card, Motion.fast, {BackgroundTransparency=1})
+            task.wait(0.12)
+            pcall(function() card:Destroy() end)
+        end
+    end)
 end
 
-local function createSectionCard(tab, cfg, side)
-    local name = type(cfg) == "table" and (cfg.Title or cfg.Name) or tostring(cfg or "Section")
-    local iconName = type(cfg) == "table" and cfg.Icon or "layers-3"
-    name = tostring(name or "Section")
+function UI:CreateWindow(config)
+    config = config or {}
+    local requested = config.Size or UDim2.fromOffset(760, 540)
+    local win = setmetatable({
+        _requestedSize = requested,
+        _railWidth = 178,
+        _topHeight = 82,
+        _tabs = {},
+        _connections = {},
+        _open = true,
+        _tabSequence = 0,
+        _settingsTab = nil,
+    }, Window)
 
-    local frame = make("Frame", {
-        Name = "Section_" .. name,
-        BackgroundColor3 = C.Card,
-        BorderSizePixel = 0,
-        Size = UDim2.new(1, 0, 0, 60),
-        AutomaticSize = Enum.AutomaticSize.Y,
-        ClipsDescendants = false,
-    })
-    round(frame, 18)
-    outline(frame, C.Line, 0.55, 1)
+    local old = GuiParent:FindFirstChild("KhfreshBentoUI")
+    if old then pcall(function() old:Destroy() end) end
 
-    local titleRow = make("Frame", {
-        BackgroundTransparency = 1,
-        Size = UDim2.new(1, 0, 0, 46),
-    }, frame)
-    icon(titleRow, iconName, UDim2.fromOffset(14, 14), UDim2.fromOffset(18, 18), C.Accent, 3)
-    local title = text(titleRow, name, 13, C.Text, true)
-    title.Position = UDim2.fromOffset(42, 0)
-    title.Size = UDim2.new(1, -54, 1, 0)
+    local gui = make("ScreenGui", {
+        Name = "KhfreshBentoUI",
+        ResetOnSpawn = false,
+        IgnoreGuiInset = true,
+        DisplayOrder = 2147483645,
+        ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+    }, GuiParent)
+    pcall(function() if syn and syn.protect_gui then syn.protect_gui(gui) end end)
+    win._gui = gui
+
+    local shell = make("Frame", {
+        Name="Shell", BackgroundColor3=C.canvas, BorderSizePixel=0,
+        Size=computeSize(requested), Position=UDim2.fromScale(0.5,0.5), AnchorPoint=Vector2.new(0.5,0.5),
+        ClipsDescendants=true, Active=true,
+    }, gui)
+    corner(shell, 24); outline(shell,C.line,0.25,1)
+    win._shell = shell
+
+    if type(config.Background) == "string" and config.Background ~= "" then
+        local bg = make("ImageLabel", {
+            Name="Background", BackgroundTransparency=1, BorderSizePixel=0,
+            Size=UDim2.fromScale(1,1), Image=config.Background,
+            ImageTransparency=tonumber(config.BackgroundImageTransparency) or 0.62,
+            ScaleType=Enum.ScaleType.Crop, ZIndex=0,
+        }, shell)
+        win._background = bg
+        local tint = make("Frame", {BackgroundColor3=C.canvas, BackgroundTransparency=0.55, Size=UDim2.fromScale(1,1), BorderSizePixel=0, ZIndex=1}, shell)
+        win._backgroundTint = tint
+    end
+
+    local top = make("Frame", {
+        Name="TopBar", BackgroundColor3=C.header, BorderSizePixel=0,
+        Size=UDim2.new(1,0,0,82), Position=UDim2.new(), ZIndex=20,
+    }, shell)
+    corner(top, 22); win._top = top
+
+    local logoHolder = make("Frame", {BackgroundColor3=C.accentSoft, BorderSizePixel=0, Position=UDim2.fromOffset(14,14), Size=UDim2.fromOffset(54,54), ZIndex=22}, top)
+    corner(logoHolder, 16)
+    win._logoHolder = logoHolder
+    if type(config.Logo) == "string" and config.Logo ~= "" then
+        local image = make("ImageLabel", {BackgroundTransparency=1, Size=UDim2.fromScale(1,1), Image=config.Logo, ScaleType=Enum.ScaleType.Fit, ZIndex=23}, logoHolder)
+        win._logo = image
+    else
+        win._logo = renderIcon(logoHolder, config.Icon or "layout-dashboard", UDim2.fromOffset(16,16), UDim2.fromOffset(22,22), C.accent, 23)
+    end
+
+    local brand = text(top, config.Title or "Khfresh Hub", 18, C.text, true)
+    brand.Position=UDim2.fromOffset(82,14); brand.Size=UDim2.new(1,-190,0,28); brand.ZIndex=22
+    win._brandText = brand
+    local author = text(top, config.Author or "Khfresh Bento UI", 11, C.muted, false)
+    author.Position=UDim2.fromOffset(82,43); author.Size=UDim2.new(1,-190,0,20); author.ZIndex=22
+    win._authorText = author
+
+    local close = make("TextButton", {Text="", BackgroundColor3=C.row, BorderSizePixel=0, Size=UDim2.fromOffset(42,42), Position=UDim2.new(1,-54,0,20), AutoButtonColor=false, ZIndex=25}, top)
+    corner(close,13); renderIcon(close,"x",UDim2.fromOffset(11,11),UDim2.fromOffset(20,20),C.secondary,26)
+    close.Activated:Connect(function() win:Destroy() end)
+    local min = make("TextButton", {Text="", BackgroundColor3=C.row, BorderSizePixel=0, Size=UDim2.fromOffset(42,42), Position=UDim2.new(1,-104,0,20), AutoButtonColor=false, ZIndex=25}, top)
+    corner(min,13); renderIcon(min,"minus",UDim2.fromOffset(11,11),UDim2.fromOffset(20,20),C.secondary,26)
+    min.Activated:Connect(function() win:Toggle() end)
+
+    local rail = make("ScrollingFrame", {
+        Name="Rail", BackgroundColor3=C.rail, BorderSizePixel=0,
+        Position=UDim2.fromOffset(0,82), Size=UDim2.new(0,178,1,-82),
+        CanvasSize=UDim2.new(), AutomaticCanvasSize=Enum.AutomaticSize.Y,
+        ScrollBarThickness=2, ScrollBarImageColor3=C.muted, ScrollingDirection=Enum.ScrollingDirection.Y,
+        ZIndex=14,
+    }, shell)
+    list(rail,7); padding(rail,10,10,12,36); win._rail=rail
+    local divider=make("Frame",{BackgroundColor3=C.lineSoft,BorderSizePixel=0,Position=UDim2.new(1,-1,0,0),Size=UDim2.new(0,1,1,0),ZIndex=15},rail)
 
     local content = make("Frame", {
-        BackgroundTransparency = 1,
-        Position = UDim2.fromOffset(10, 46),
-        Size = UDim2.new(1, -20, 0, 0),
-        AutomaticSize = Enum.AutomaticSize.Y,
-    }, frame)
-    local layout = make("UIListLayout", {
-        Padding = UDim.new(0, 7),
-        SortOrder = Enum.SortOrder.LayoutOrder,
-    }, content)
-    addPadding(content, 0, 0, 0, 10)
+        Name="Content", BackgroundColor3=C.canvas, BackgroundTransparency=0.12, BorderSizePixel=0,
+        Position=UDim2.fromOffset(178,82), Size=UDim2.new(1,-178,1,-82), ClipsDescendants=true, ZIndex=10,
+    }, shell)
+    win._content=content
 
-    local obj = setmetatable({
-        _tab = tab,
-        _frame = frame,
-        _title = title,
-        _content = content,
-        _layout = layout,
-        _name = name,
-        _side = tostring(side or "Auto"),
-        _alive = true,
-        _order = 0,
-    }, Section)
+    -- Bottom drag strip requested by the user.
+    local drag = make("TextButton", {Text="", BackgroundTransparency=1, BorderSizePixel=0, Position=UDim2.new(0.5,-90,1,-19), Size=UDim2.fromOffset(180,16), AutoButtonColor=false, ZIndex=40}, shell)
+    local dragLine = make("Frame", {BackgroundColor3=C.muted, BackgroundTransparency=0.22, BorderSizePixel=0, Size=UDim2.fromOffset(76,3), Position=UDim2.new(0.5,-38,0.5,-1), ZIndex=41}, drag)
+    corner(dragLine, 99); win._dragHandle=drag
+    -- Bottom-right resize grip, similar to desktop UI libraries.
+    local grip = make("TextButton", {Text="", BackgroundTransparency=1, BorderSizePixel=0, AnchorPoint=Vector2.new(1,1), Position=UDim2.new(1,0,1,0), Size=UDim2.fromOffset(28,28), AutoButtonColor=false, ZIndex=45}, shell)
+    for i=1,3 do drawLine(grip, 28-(i*6), 28, 28, 28-(i*6), C.muted, 1.5, 46) end
+    win._resizeHandle=grip
 
-    frame:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
-        if obj._alive then
-            task.defer(function() tab:_reflow() end)
-        end
-    end)
-    return obj
-end
-
-function Tab:_reflow()
-    if not self._alive then return end
-    local vp = viewport()
-    local mobile = vp.X < 760 or vp.Y < 520
-    self._mobile = mobile
-    if self._topStack then
-        self._topStack.Size = UDim2.new(1, 0, 0, self._topStack.UIListLayout.AbsoluteContentSize.Y)
-    end
-    local topH = self._topStack and self._topStack.AbsoluteSize.Y or 0
-    local gap = 10
-    local width = mobile and 1 or 0.5
-    local columnW = mobile and 1 or 0.5
-    local left = self._leftCol
-    local right = self._rightCol
-    left.Position = UDim2.new(0, 0, 0, topH + gap)
-    left.Size = UDim2.new(columnW, mobile and 0 or -5, 0, left.UIListLayout.AbsoluteContentSize.Y)
-    if mobile then
-        right.Visible = false
-        right.Size = UDim2.new(0, 0, 0, 0)
-    else
-        right.Visible = true
-        right.Position = UDim2.new(0.5, 5, 0, topH + gap)
-        right.Size = UDim2.new(0.5, -5, 0, right.UIListLayout.AbsoluteContentSize.Y)
-    end
-    local maxH = math.max(left.UIListLayout.AbsoluteContentSize.Y, right.Visible and right.UIListLayout.AbsoluteContentSize.Y or 0)
-    local total = topH + gap + maxH + 18
-    self._pageCanvas = total
-    self._body.CanvasSize = UDim2.new(0, 0, 0, total)
-end
-
-function Tab:_attachSection(section)
-    section._frame.LayoutOrder = #self._sections + 1
-    local target
-    if self._mobile then
-        target = self._leftCol
-    elseif section._side:lower() == "right" then
-        target = self._rightCol
-    elseif section._side:lower() == "left" then
-        target = self._leftCol
-    else
-        local lh = self._leftCol.UIListLayout.AbsoluteContentSize.Y
-        local rh = self._rightCol.UIListLayout.AbsoluteContentSize.Y
-        target = lh <= rh and self._leftCol or self._rightCol
-    end
-    section._frame.Parent = target
-    self._lastSection = section
-    task.defer(function() self:_reflow() end)
-end
-
-function Tab:_implicitSection()
-    if self._lastSection and self._lastSection._alive then return self._lastSection end
-    local s = createSectionCard(self, {Title = "General", Icon = "sliders-horizontal"}, "Left")
-    table.insert(self._sections, s)
-    self:_attachSection(s)
-    return s
-end
-
-function Tab:CreateSection(nameOrConfig, side)
-    local cfg = nameOrConfig
-    if type(cfg) ~= "table" then cfg = {Title = tostring(cfg or "Section"), Icon = "layers-3"} end
-    local s = createSectionCard(self, cfg, side or cfg.Side or cfg.Position)
-    table.insert(self._sections, s)
-    self:_attachSection(s)
-    return s
-end
-
-function Tab:CreateHeader(cfg)
-    if type(cfg) ~= "table" then cfg = {Title = tostring(cfg or "")} end
-    local wrap = make("Frame", {
-        BackgroundTransparency = 1,
-        Size = UDim2.new(1, 0, 0, 52),
-        AutomaticSize = Enum.AutomaticSize.Y,
-    }, self._topStack)
-    local title = text(wrap, cfg.Title or "", 18, C.Text, true)
-    title.Size = UDim2.new(1, -34, 0, 27)
-    title.Position = UDim2.fromOffset(2, 0)
-    if cfg.Icon then icon(wrap, cfg.Icon, UDim2.new(1, -24, 0, 5), UDim2.fromOffset(18, 18), C.Accent, 3) end
-    local subtitle = cfg.Subtitle or cfg.Desc or cfg.Description
-    if subtitle and subtitle ~= "" then
-        local sub = text(wrap, subtitle, 11, C.Muted, false)
-        sub.Size = UDim2.new(1, -4, 0, 22)
-        sub.Position = UDim2.fromOffset(2, 27)
-    else
-        wrap.Size = UDim2.new(1, 0, 0, 30)
-    end
-    task.defer(function() self:_reflow() end)
-    return wrap
-end
-
-local function createControlRow(section, height)
-    section._order = section._order + 1
-    local row = make("Frame", {
-        Name = "Control_" .. tostring(section._order),
-        BackgroundColor3 = C.Card2,
-        BorderSizePixel = 0,
-        Size = UDim2.new(1, 0, 0, height or 46),
-        LayoutOrder = section._order,
-    }, section._content)
-    round(row, 13)
-    outline(row, C.Line, 0.70, 1)
-    return row
-end
-
-local function controlLabel(row, name, iconName, compact)
-    local left = iconName and 44 or 14
-    if iconName then icon(row, iconName, UDim2.fromOffset(13, (compact and 12 or 14)), UDim2.fromOffset(17, 17), C.Muted, 3) end
-    local lbl = text(row, name, compact and 11 or 12, C.Text, true)
-    lbl.Position = UDim2.fromOffset(left, 0)
-    lbl.Size = UDim2.new(1, -(left + 12), 1, 0)
-    return lbl
-end
-
-function Section:CreateToggle(cfg)
-    cfg = cfg or {}
-    local state = cfg.Default == true or cfg.Value == true
-    local row = createControlRow(self, 48)
-    local lbl = controlLabel(row, cfg.Name or cfg.Title or "Toggle", cfg.Icon, false)
-    lbl.Size = UDim2.new(1, -82, 1, 0)
-
-    local track = make("Frame", {
-        BackgroundColor3 = state and C.Accent or C.Raised,
-        Position = UDim2.new(1, -58, 0.5, -13),
-        Size = UDim2.fromOffset(44, 26),
-        BorderSizePixel = 0,
-    }, row)
-    round(track, 13)
-    local knob = make("Frame", {
-        BackgroundColor3 = C.Text,
-        Size = UDim2.fromOffset(20, 20),
-        Position = state and UDim2.new(1, -23, 0.5, -10) or UDim2.fromOffset(3, 3),
-        BorderSizePixel = 0,
-    }, track)
-    round(knob, 10)
-
-    local hit = button(row, {Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, ZIndex = 20})
-    local function set(value, emit)
-        state = value == true
-        tween(track, TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundColor3 = state and C.Accent or C.Raised})
-        tween(knob, TweenInfo.new(0.18, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-            Position = state and UDim2.new(1, -23, 0.5, -10) or UDim2.fromOffset(3, 3)
-        })
-        if emit and type(cfg.Callback) == "function" then task.spawn(function() pcall(cfg.Callback, state) end) end
-    end
-    bindActivate(hit, function() set(not state, true) end)
-    return {
-        Set = function(_, v) set(v, true) end,
-        SetValue = function(_, v) set(v, true) end,
-        Get = function() return state end,
-        GetValue = function() return state end,
-        _frame = row,
-    }
-end
-
-function Section:CreateButton(cfg)
-    cfg = cfg or {}
-    local row = createControlRow(self, 46)
-    local lbl = controlLabel(row, cfg.Name or cfg.Title or "Button", cfg.Icon, false)
-    lbl.Size = UDim2.new(1, -54, 1, 0)
-    local chev = icon(row, cfg.Icon or "chevron-right", UDim2.new(1, -31, 0.5, -9), UDim2.fromOffset(18, 18), C.Accent, 3)
-    chev.Name = "ActionIcon"
-    local hit = button(row, {Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, ZIndex = 20})
-    hoverButton(hit, Color3.new(1,1,1), Color3.fromRGB(255,255,255))
-    bindActivate(hit, function()
-        if type(cfg.Callback) == "function" then cfg.Callback() end
-    end)
-    return {_frame = row}
-end
-
-function Section:CreateDropdown(cfg)
-    cfg = cfg or {}
-    local options = normalizeArray(cfg.Options or cfg.Values or {})
-    local selected = cfg.Default or cfg.Value or options[1] or "Select"
-    local row = createControlRow(self, 50)
-    controlLabel(row, cfg.Name or cfg.Title or "Dropdown", cfg.Icon, true)
-    local valueBtn = button(row, {
-        Size = UDim2.new(0.56, -44, 1, -8),
-        Position = UDim2.new(0.44, 0, 0, 4),
-        BackgroundColor3 = C.Raised,
-        ZIndex = 15,
-    })
-    round(valueBtn, 11)
-    local valueText = text(valueBtn, tostring(selected), 11, C.Secondary, false)
-    valueText.Position = UDim2.fromOffset(10, 0)
-    valueText.Size = UDim2.new(1, -32, 1, 0)
-    valueText.TextXAlignment = Enum.TextXAlignment.Right
-    local chev = icon(valueBtn, "chevron-down", UDim2.new(1, -23, 0.5, -7), UDim2.fromOffset(14, 14), C.Muted, 16)
-
-    local popup = make("Frame", {
-        BackgroundColor3 = C.Raised,
-        BorderSizePixel = 0,
-        Size = UDim2.new(1, -20, 0, 0),
-        AutomaticSize = Enum.AutomaticSize.Y,
-        Position = UDim2.new(0, 10, 0, 54),
-        Visible = false,
-        ZIndex = 40,
-    }, row)
-    round(popup, 12)
-    outline(popup, C.Line, 0.4, 1)
-    addPadding(popup, 6, 6, 6, 6)
-    local lay = make("UIListLayout", {Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder}, popup)
-    local open = false
-    local function rebuild()
-        for _, child in ipairs(popup:GetChildren()) do
-            if child:IsA("TextButton") then child:Destroy() end
-        end
-        for _, opt in ipairs(options) do
-            local b = button(popup, {
-                Size = UDim2.new(1, 0, 0, 32),
-                BackgroundColor3 = C.Card,
-                ZIndex = 41,
-            })
-            round(b, 9)
-            local tx = text(b, opt, 10, C.Secondary, false)
-            tx.Position = UDim2.fromOffset(10, 0)
-            tx.Size = UDim2.new(1, -20, 1, 0)
-            bindActivate(b, function()
-                selected = opt
-                valueText.Text = opt
-                open = false
-                popup.Visible = false
-                if type(cfg.Callback) == "function" then task.spawn(function() pcall(cfg.Callback, opt) end) end
-            end)
+    function win:ApplyTheme()
+        pcall(function() shell.BackgroundColor3=C.canvas; top.BackgroundColor3=C.header; rail.BackgroundColor3=C.rail end)
+        for _, t in ipairs(self._tabs) do
+            if t._btn then t._btn.BackgroundColor3 = (t == self._selected and C.accentSoft or C.row) end
         end
     end
-    rebuild()
-    bindActivate(valueBtn, function()
-        open = not open
-        popup.Visible = open
-        chev.ImageColor3 = open and C.Accent or C.Muted
-    end)
-    return {
-        Set = function(_, value)
-            value = tostring(value or "")
-            for _, opt in ipairs(options) do if opt == value then selected = value break end end
-            valueText.Text = tostring(selected)
-        end,
-        SetValue = function(_, value)
-            value = tostring(value or "")
-            for _, opt in ipairs(options) do
-                if opt == value then selected = value; valueText.Text = value; break end
-            end
-        end,
-        Get = function() return selected end,
-        GetValue = function() return selected end,
-        Refresh = function(_, newOptions)
-            options = normalizeArray(newOptions or {})
-            rebuild()
-        end,
-        _frame = row,
-    }
-end
 
-function Section:CreateMultiDropdown(cfg)
-    cfg = cfg or {}
-    local options = normalizeArray(cfg.Options or cfg.Values or {})
-    local chosen = {}
-    if type(cfg.Default) == "table" then
-        for _, value in ipairs(cfg.Default) do chosen[tostring(value)] = true end
-    elseif cfg.Default ~= nil then
-        chosen[tostring(cfg.Default)] = true
-    end
-    local row = createControlRow(self, 54)
-    controlLabel(row, cfg.Name or cfg.Title or "Multi Select", cfg.Icon, true)
-    local valueBtn = button(row, {
-        Size = UDim2.new(0.56, -44, 1, -10),
-        Position = UDim2.new(0.44, 0, 0, 5),
-        BackgroundColor3 = C.Raised,
-        ZIndex = 15,
-    })
-    round(valueBtn, 11)
-    local valueText = text(valueBtn, "", 10, C.Secondary, false)
-    valueText.Position = UDim2.fromOffset(10, 0)
-    valueText.Size = UDim2.new(1, -32, 1, 0)
-    valueText.TextXAlignment = Enum.TextXAlignment.Right
-    icon(valueBtn, "chevrons-up-down", UDim2.new(1, -23, 0.5, -7), UDim2.fromOffset(14, 14), C.Muted, 16)
+    table.insert(UI._windows, win)
+    installDragAndResize(win)
+    installResponsive(win)
 
-    local popup = make("Frame", {
-        BackgroundColor3 = C.Raised, BorderSizePixel = 0,
-        Size = UDim2.new(1, -20, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
-        Position = UDim2.new(0, 10, 0, 58), Visible = false, ZIndex = 40,
-    }, row)
-    round(popup, 12); outline(popup, C.Line, 0.4, 1); addPadding(popup, 6, 6, 6, 6)
-    make("UIListLayout", {Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder}, popup)
-    local open = false
-    local updateValue = function()
-        local picked = {}
-        for _, opt in ipairs(options) do if chosen[opt] then picked[#picked+1] = opt end end
-        valueText.Text = #picked > 0 and table.concat(picked, ", ") or "None"
-        return picked
-    end
-    local function rebuild()
-        for _, child in ipairs(popup:GetChildren()) do if child:IsA("TextButton") then child:Destroy() end end
-        for _, opt in ipairs(options) do
-            local b = button(popup, {Size = UDim2.new(1,0,0,32), BackgroundColor3 = chosen[opt] and C.AccentSoft or C.Card, ZIndex = 41})
-            round(b, 9)
-            local dot = make("Frame", {Size = UDim2.fromOffset(12,12), Position = UDim2.fromOffset(10,10), BackgroundColor3 = chosen[opt] and C.Accent or C.Muted, BorderSizePixel=0, ZIndex=42}, b)
-            round(dot, 6)
-            local tx = text(b, opt, 10, chosen[opt] and C.Text or C.Secondary, false)
-            tx.Position = UDim2.fromOffset(30,0); tx.Size = UDim2.new(1,-40,1,0)
-            bindActivate(b, function()
-                chosen[opt] = not chosen[opt]
-                rebuild(); updateValue()
-                if type(cfg.Callback) == "function" then task.spawn(function() pcall(cfg.Callback, updateValue()) end) end
-            end)
-        end
-        updateValue()
-    end
-    rebuild()
-    bindActivate(valueBtn, function() open = not open; popup.Visible = open end)
-    return {
-        Set = function(_, values)
-            table.clear(chosen)
-            if type(values) == "table" then for _, value in ipairs(values) do chosen[tostring(value)] = true end end
-            rebuild()
-        end,
-        SetValue = function(selfRef, values) selfRef:Set(values) end,
-        Get = function()
-            local out = {}; for _, opt in ipairs(options) do if chosen[opt] then out[#out+1]=opt end end; return out
-        end,
-        Refresh = function(_, values) options = normalizeArray(values or {}); rebuild() end,
-        _frame = row,
-    }
-end
-
-function Section:CreateTextbox(cfg)
-    cfg = cfg or {}
-    local current = tostring(cfg.Default or cfg.Value or "")
-    local row = createControlRow(self, 50)
-    controlLabel(row, cfg.Name or cfg.Title or "Input", cfg.Icon or "text-cursor-input", true)
-    local box = make("TextBox", {
-        Size = UDim2.new(0.56, -44, 1, -10), Position = UDim2.new(0.44, 0, 0, 5),
-        BackgroundColor3 = C.Raised, BorderSizePixel = 0, ClearTextOnFocus = false,
-        Text = current, PlaceholderText = tostring(cfg.Placeholder or ""),
-        TextColor3 = C.Text, PlaceholderColor3 = C.Muted,
-        TextSize = 11, Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Right,
-        ZIndex = 15,
-    }, row)
-    round(box, 11)
-    addPadding(box, 10, 10, 0, 0)
-    box.FocusLost:Connect(function()
-        current = box.Text
-        if type(cfg.Callback) == "function" then task.spawn(function() pcall(cfg.Callback, current) end) end
-    end)
-    return {
-        Set = function(_, value) current = tostring(value or ""); box.Text = current; if cfg.Callback then task.spawn(cfg.Callback, current) end end,
-        SetValue = function(selfRef, value) selfRef:Set(value) end,
-        Get = function() return current end,
-        GetValue = function() return current end,
-        _frame = row,
-    }
-end
-
-function Section:CreateSlider(cfg)
-    cfg = cfg or {}
-    local min = tonumber(cfg.Min or cfg.Minimum) or 0
-    local max = tonumber(cfg.Max or cfg.Maximum) or 100
-    local value = math.clamp(tonumber(cfg.Default or cfg.Value) or min, min, max)
-    local row = createControlRow(self, 62)
-    local lbl = controlLabel(row, cfg.Name or cfg.Title or "Slider", cfg.Icon or "sliders-horizontal", true)
-    lbl.Size = UDim2.new(0.55,0,0,22)
-    local valueLbl = text(row, tostring(value), 10, C.Secondary, true)
-    valueLbl.Position = UDim2.new(0.72,0,0,8); valueLbl.Size = UDim2.new(0.24,0,0,20); valueLbl.TextXAlignment = Enum.TextXAlignment.Right
-    local track = make("Frame", {Position=UDim2.new(0,14,1,-24), Size=UDim2.new(1,-28,0,6), BackgroundColor3=C.Raised, BorderSizePixel=0}, row); round(track,3)
-    local fill = make("Frame", {Size=UDim2.new((value-min)/math.max(0.0001,max-min),0,1,0), BackgroundColor3=C.Accent, BorderSizePixel=0}, track); round(fill,3)
-    local drag = button(track, {Size=UDim2.fromScale(1,1), BackgroundTransparency=1, ZIndex=20})
-    local function set(v, emit)
-        value = math.clamp(tonumber(v) or min,min,max)
-        local alpha=(value-min)/math.max(0.0001,max-min)
-        fill.Size=UDim2.new(alpha,0,1,0); valueLbl.Text=tostring(math.floor(value*100+0.5)/100)
-        if emit and type(cfg.Callback)=="function" then task.spawn(function() pcall(cfg.Callback,value) end) end
-    end
-    local dragging=false
-    drag.InputBegan:Connect(function(input)
-        if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then dragging=true end
-    end)
-    drag.InputEnded:Connect(function(input)
-        if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then dragging=false end
-    end)
-    UserInputService.InputChanged:Connect(function(input)
-        if not dragging then return end
-        if input.UserInputType~=Enum.UserInputType.MouseMovement and input.UserInputType~=Enum.UserInputType.Touch then return end
-        local x=math.clamp(input.Position.X,track.AbsolutePosition.X,track.AbsolutePosition.X+track.AbsoluteSize.X)
-        local alpha=(x-track.AbsolutePosition.X)/math.max(1,track.AbsoluteSize.X)
-        set(min+(max-min)*alpha,true)
-    end)
-    set(value,false)
-    return {Set=function(_,v)set(v,true)end,SetValue=function(selfRef,v)selfRef:Set(v)end,Get=function()return value end,GetValue=function()return value end,_frame=row}
-end
-
-function Section:CreateColorpicker(cfg)
-    cfg = cfg or {}
-    local selected = cfg.Default or cfg.Value or C.Accent
-    local row = createControlRow(self, 46)
-    controlLabel(row, cfg.Name or cfg.Title or "Color", cfg.Icon or "palette", true)
-    local swatch = make("Frame", {Size=UDim2.fromOffset(34,24), Position=UDim2.new(1,-48,0.5,-12), BackgroundColor3=selected, BorderSizePixel=0}, row); round(swatch,8)
-    local hit=button(row,{Size=UDim2.fromScale(1,1),BackgroundTransparency=1,ZIndex=20})
-    bindActivate(hit,function() if type(cfg.Callback)=="function" then pcall(cfg.Callback,selected) end end)
-    return {Set=function(_,v)if typeof(v)=="Color3"then selected=v;swatch.BackgroundColor3=v end end,Get=function()return selected end,_frame=row}
-end
-
-function Section:CreateLabel(value)
-    local row = make("Frame", {BackgroundTransparency=1, Size=UDim2.new(1,0,0,30), LayoutOrder=self._order+1}, self._content)
-    self._order=self._order+1
-    local lbl=text(row,value,11,C.Muted,false); lbl.Size=UDim2.new(1,0,1,0)
-    return row
-end
-
--- Direct controls on tabs: always place them in the latest created section.
-function Tab:CreateToggle(cfg) return self:_implicitSection():CreateToggle(cfg) end
-function Tab:CreateButton(cfg) return self:_implicitSection():CreateButton(cfg) end
-function Tab:CreateDropdown(cfg) return self:_implicitSection():CreateDropdown(cfg) end
-function Tab:CreateMultiDropdown(cfg) return self:_implicitSection():CreateMultiDropdown(cfg) end
-function Tab:CreateTextbox(cfg) return self:_implicitSection():CreateTextbox(cfg) end
-function Tab:CreateSlider(cfg) return self:_implicitSection():CreateSlider(cfg) end
-function Tab:CreateColorpicker(cfg) return self:_implicitSection():CreateColorpicker(cfg) end
-function Tab:CreateLabel(value) return self:_implicitSection():CreateLabel(value) end
-
-function Tab:CreateStatRow(items)
-    local wrap = make("Frame", {BackgroundTransparency=1, Size=UDim2.new(1,0,0,58), LayoutOrder=1}, self._topStack)
-    local count = #items
-    for i,item in ipairs(items or {}) do
-        local cell=make("Frame",{BackgroundColor3=C.Card,BorderSizePixel=0,Size=UDim2.new(1/count,-6,1,0),Position=UDim2.new((i-1)/count,((i-1)*3),0,0)},wrap)
-        round(cell,14); outline(cell,C.Line,0.6,1)
-        local t=text(cell,item.Title or item.Name or "",10,C.Muted,true); t.Position=UDim2.fromOffset(10,7);t.Size=UDim2.new(1,-20,0,18)
-        local v=text(cell,tostring(item.Value or ""),15,C.Text,true);v.Position=UDim2.fromOffset(10,25);v.Size=UDim2.new(1,-20,0,22)
-    end
-    task.defer(function()self:_reflow()end)
-    return wrap
-end
-
-function Tab:CreateFeaturedCard(cfg)
-    cfg=cfg or {}
-    local f=make("Frame",{BackgroundColor3=C.Card2,BorderSizePixel=0,Size=UDim2.new(1,0,0,86)},self._topStack)
-    round(f,16); outline(f,C.Accent,0.65,1)
-    if cfg.Icon then icon(f,cfg.Icon,UDim2.fromOffset(14,17),UDim2.fromOffset(24,24),C.Accent,4) end
-    local t=text(f,cfg.Title or "",14,C.Text,true);t.Position=UDim2.fromOffset(cfg.Icon and 48 or 14,12);t.Size=UDim2.new(1,-64,0,24)
-    local s=text(f,cfg.Description or cfg.Subtitle or "",11,C.Secondary,false);s.Position=UDim2.fromOffset(cfg.Icon and 48 or 14,38);s.Size=UDim2.new(1,-64,0,34);s.TextWrapped=true
-    task.defer(function()self:_reflow()end)
-    return f
-end
-
--- ================================================================
--- WINDOW CONSTRUCTION
--- ================================================================
-function Library:CreateWindow(config)
-    config = config or {}
-    self:SetTheme(config.Theme or "Bento")
-
-    local vp=viewport()
-    local small=vp.X<760 or vp.Y<520
-    local desiredW=tonumber(config.Width) or ((config.Size and config.Size.X and config.Size.X.Offset) or 860)
-    local desiredH=tonumber(config.Height) or ((config.Size and config.Size.Y and config.Size.Y.Offset) or 580)
-    local shellW=small and math.max(300,math.min(vp.X-16,desiredW)) or math.max(620,math.min(vp.X-44,desiredW))
-    local shellH=small and math.max(300,math.min(vp.Y-24,desiredH)) or math.max(420,math.min(vp.Y-44,desiredH))
-
-    local gui=make("ScreenGui",{
-        Name="KhfreshBentoUI",
-        ResetOnSpawn=false,
-        IgnoreGuiInset=true,
-        DisplayOrder=2147483645,
-        ZIndexBehavior=Enum.ZIndexBehavior.Sibling,
-        Enabled=true,
-    },GUI_PARENT)
-    pcall(function()if syn and syn.protect_gui then syn.protect_gui(gui) end end)
-
-    local shell=make("Frame",{
-        Name="Shell",
-        BackgroundColor3=C.Canvas,
-        BorderSizePixel=0,
-        Size=UDim2.fromOffset(shellW,shellH),
-        Position=UDim2.fromScale(0.5,0.5),
-        AnchorPoint=Vector2.new(0.5,0.5),
-        ClipsDescendants=true,
-        Active=true,
-        ZIndex=2,
-    },gui)
-    round(shell,22); outline(shell,C.Line,0.24,1)
-
-    local bg=make("ImageLabel",{
-        Name="Background",
-        BackgroundTransparency=1,
-        Size=UDim2.fromScale(1,1),
-        Position=UDim2.fromScale(0,0),
-        Image="",
-        ImageTransparency=1,
-        ScaleType=Enum.ScaleType.Crop,
-        ZIndex=1,
-    },shell)
-
-    local scrim=make("Frame",{
-        Name="BackgroundTint",
-        BackgroundColor3=C.Canvas,
-        BackgroundTransparency=0.36,
-        Size=UDim2.fromScale(1,1),
-        BorderSizePixel=0,
-        ZIndex=1,
-    },shell)
-
-    local top=make("Frame",{
-        Name="TopBar",
-        BackgroundColor3=C.Shell,
-        BackgroundTransparency=0.04,
-        BorderSizePixel=0,
-        Size=UDim2.new(1,-214,0,72),
-        Position=UDim2.fromOffset(204,10),
-        ZIndex=10,
-    },shell)
-    round(top,18); outline(top,C.Line,0.5,1)
-
-    local topIcon=icon(top,config.Icon or "layout-dashboard",UDim2.fromOffset(18,22),UDim2.fromOffset(26,26),C.Accent,13)
-    local title=text(top,config.Title or "Khfresh Hub",16,C.Text,true); title.Position=UDim2.fromOffset(58,12);title.Size=UDim2.new(1,-164,0,24);title.ZIndex=13
-    local author=text(top,config.Author or "Khfresh",10,C.Muted,false);author.Position=UDim2.fromOffset(58,38);author.Size=UDim2.new(1,-164,0,18);author.ZIndex=13
-
-    local closeBtn=button(top,{Size=UDim2.fromOffset(38,38),Position=UDim2.new(1,-48,0,17),BackgroundColor3=C.Raised,ZIndex=14});round(closeBtn,12);icon(closeBtn,"x",UDim2.fromOffset(10,10),UDim2.fromOffset(18,18),C.Secondary,15)
-    local minBtn=button(top,{Size=UDim2.fromOffset(38,38),Position=UDim2.new(1,-92,0,17),BackgroundColor3=C.Raised,ZIndex=14});round(minBtn,12);icon(minBtn,"minus",UDim2.fromOffset(10,10),UDim2.fromOffset(18,18),C.Secondary,15)
-
-    local rail=make("ScrollingFrame",{
-        Name="Rail",BackgroundColor3=C.Rail,BackgroundTransparency=0.05,BorderSizePixel=0,
-        Size=UDim2.fromOffset(194,shellH-20),Position=UDim2.fromOffset(10,10),
-        CanvasSize=UDim2.new(0,0,0,0),AutomaticCanvasSize=Enum.AutomaticSize.Y,
-        ScrollBarThickness=2,ScrollBarImageColor3=C.Muted,ZIndex=9,
-    },shell)
-    round(rail,18); outline(rail,C.Line,0.58,1)
-    addPadding(rail,10,10,10,10)
-    local railLayout=make("UIListLayout",{Padding=UDim.new(0,6),SortOrder=Enum.SortOrder.LayoutOrder},rail)
-
-    local brand=make("Frame",{BackgroundColor3=C.Card2,BorderSizePixel=0,Size=UDim2.new(1,0,0,64),LayoutOrder=0,ZIndex=10},rail);round(brand,14)
-    local brandIcon=icon(brand,config.Icon or "layout-dashboard",UDim2.fromOffset(12,12),UDim2.fromOffset(34,34),C.Accent,12);round(make("Frame",{},brand),0)
-    -- The hub owns its logo asset; the library never invents one.
-    local brandText=text(brand,config.Title or "Khfresh Hub",13,C.Text,true);brandText.Position=UDim2.fromOffset(54,8);brandText.Size=UDim2.new(1,-62,0,22);brandText.ZIndex=12
-    local brandAuthor=text(brand,config.Author or "Khfresh",9,C.Muted,false);brandAuthor.Position=UDim2.fromOffset(54,31);brandAuthor.Size=UDim2.new(1,-62,0,18);brandAuthor.ZIndex=12
-
-    local body=make("Frame",{
-        Name="Body",BackgroundColor3=C.Canvas,BackgroundTransparency=0.10,BorderSizePixel=0,
-        Size=UDim2.new(1,-214,1,-102),Position=UDim2.fromOffset(204,92),ClipsDescendants=true,ZIndex=5,
-    },shell)
-
-    local topBody=make("Frame",{Name="BodyTop",BackgroundTransparency=1,Size=UDim2.new(1,-8,0,0),Position=UDim2.fromOffset(4,4),AutomaticSize=Enum.AutomaticSize.Y,ZIndex=6},body)
-    local topLayout=make("UIListLayout",{Padding=UDim.new(0,8),SortOrder=Enum.SortOrder.LayoutOrder},topBody)
-    local leftCol=make("Frame",{Name="LeftColumn",BackgroundTransparency=1,Size=UDim2.new(0.5,-5,0,0),Position=UDim2.fromOffset(0,70),AutomaticSize=Enum.AutomaticSize.Y,ZIndex=6},body)
-    local rightCol=make("Frame",{Name="RightColumn",BackgroundTransparency=1,Size=UDim2.new(0.5,-5,0,0),Position=UDim2.new(0.5,5,0,70),AutomaticSize=Enum.AutomaticSize.Y,ZIndex=6},body)
-    local leftLayout=make("UIListLayout",{Padding=UDim.new(0,10),SortOrder=Enum.SortOrder.LayoutOrder},leftCol)
-    local rightLayout=make("UIListLayout",{Padding=UDim.new(0,10),SortOrder=Enum.SortOrder.LayoutOrder},rightCol)
-
-    local win=setmetatable({
-        _gui=gui,_shell=shell,_body=body,_rail=rail,_top=top,
-        _topStack=topBody,_tabs={},_active=nil,_selected=nil,
-        _leftCol=leftCol,_rightCol=rightCol,
-        _brand=brand,_brandText=brandText,_brandAuthor=brandAuthor,_brandIcon=brandIcon,_topIcon=topIcon,
-        _background=bg,_backgroundTint=scrim,_open=true,_visible=true,_minimized=false,_alive=true,
-        _connections={},_floating=nil,_mobile=small,
-    },Window)
-
-    -- Compatibility: Hub accesses Window._raw in a few boot/final checks.
-    win._raw=win
-
-    bindActivate(closeBtn,function() win:Destroy() end)
-    bindActivate(minBtn,function() win:Minimize() end)
-
-    -- Smooth drag, mouse + touch. Only the chrome area starts the drag.
-    local dragging=false; local dragStart=nil; local startPos=nil
-    top.InputBegan:Connect(function(input)
-        if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then
-            dragging=true;dragStart=input.Position;startPos=shell.Position
-        end
-    end)
-    table.insert(win._connections,UserInputService.InputChanged:Connect(function(input)
-        if not dragging then return end
-        if input.UserInputType~=Enum.UserInputType.MouseMovement and input.UserInputType~=Enum.UserInputType.Touch then return end
-        local delta=input.Position-dragStart
-        shell.Position=UDim2.new(startPos.X.Scale,startPos.X.Offset+delta.X,startPos.Y.Scale,startPos.Y.Offset+delta.Y)
-    end))
-    table.insert(win._connections,UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then dragging=false end
-    end))
-
-    local lastViewport=nil
-    local function responsive(force)
-        if not win._alive then return end
-        local v=viewport()
-        if not force and lastViewport and lastViewport.X==v.X and lastViewport.Y==v.Y then return end
-        lastViewport=v
-        local m=v.X<760 or v.Y<520; win._mobile=m
-        local w=m and math.max(300,math.min(v.X-16,desiredW)) or math.max(620,math.min(v.X-44,desiredW))
-        local h=m and math.max(300,math.min(v.Y-24,desiredH)) or math.max(420,math.min(v.Y-44,desiredH))
-        shell.Size=UDim2.fromOffset(w,h)
-        if m then
-            rail.Size=UDim2.fromOffset(64,h-20)
-            top.Position=UDim2.fromOffset(76,10);top.Size=UDim2.new(1,-86,0,64)
-            body.Position=UDim2.fromOffset(76,84);body.Size=UDim2.new(1,-86,1,-94)
-            brand.Size=UDim2.new(1,0,0,54)
-            brandText.Visible=false;brandAuthor.Visible=false
-            brandIcon.Position=UDim2.fromOffset(15,10);brandIcon.Size=UDim2.fromOffset(30,30)
-        else
-            rail.Size=UDim2.fromOffset(194,h-20)
-            top.Position=UDim2.fromOffset(204,10);top.Size=UDim2.new(1,-214,0,72)
-            body.Position=UDim2.fromOffset(204,92);body.Size=UDim2.new(1,-214,1,-102)
-            brand.Size=UDim2.new(1,0,0,64)
-            brandText.Visible=true;brandAuthor.Visible=true
-            brandIcon.Position=UDim2.fromOffset(12,12);brandIcon.Size=UDim2.fromOffset(34,34)
-        end
-        for _,t in ipairs(win._tabs) do
-            local tabLabel=t._label
-            local tabIcon=t._iconImg
-            if tabLabel then tabLabel.Visible=not m end
-            if tabIcon then
-                tabIcon.Position=m and UDim2.new(0.5,-9,0.5,-9) or UDim2.fromOffset(13,12)
-            end
-            t:_reflow()
-        end
-        if win._floating and win._floating.Parent then
-            local f=win._floating:FindFirstChild("FloatingButton")
-            if f then
-                f.Position=m and UDim2.new(1,-72,1,-72) or UDim2.new(0,16,0.5,-29)
-            end
-        end
-    end
-    table.insert(win._connections,workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
-        task.defer(function() if win._alive then responsive(true) end end)
-    end))
-    local cam=workspace.CurrentCamera
-    if cam then table.insert(win._connections,cam:GetPropertyChangedSignal("ViewportSize"):Connect(function() responsive(true) end)) end
-
-    table.insert(self._windows,win)
-    responsive(true)
+    gui.Enabled=true
+    shell.Visible=true
     return win
 end
 
-function Window:CreateTab(nameOrConfig, iconName)
-    if not self._alive then return nil end
-    local cfg=type(nameOrConfig)=="table" and nameOrConfig or {Title=tostring(nameOrConfig or "Tab"),Icon=iconName}
-    local title=tostring(cfg.Title or cfg.Name or "Tab")
-    local ico=cfg.Icon or iconName or "circle"
+function Window:CreateTab(nameOrConfig, icon)
+    local config = type(nameOrConfig)=="table" and nameOrConfig or {Title=nameOrConfig,Icon=icon}
+    local title=tostring(config.Title or config.Name or "Tab")
+    local iconName=config.Icon or "circle"
+    self._tabSequence += 1
 
-    local tabBtn=button(self._rail,{Name="Tab_"..title,BackgroundColor3=C.Card2,Size=UDim2.new(1,0,0,42),ZIndex=11,LayoutOrder=#self._tabs+1})
-    round(tabBtn,13);outline(tabBtn,C.Line,0.78,1)
-    local tabIcon=icon(tabBtn,ico,UDim2.fromOffset(13,12),UDim2.fromOffset(18,18),C.Muted,13)
-    local lbl=text(tabBtn,title,11,C.Secondary,true);lbl.Position=UDim2.fromOffset(40,0);lbl.Size=UDim2.new(1,-48,1,0);lbl.ZIndex=13
+    local tabBtn=make("TextButton",{Name="Tab_"..cleanName(title),Text="",BackgroundColor3=C.row,BorderSizePixel=0,Size=UDim2.new(1,0,0,48),AutoButtonColor=false,LayoutOrder=self._tabSequence,ZIndex=16},self._rail)
+    corner(tabBtn,15)
+    local ico=renderIcon(tabBtn,iconName,UDim2.fromOffset(12,12),UDim2.fromOffset(24,24),C.muted,18)
+    local lbl=text(tabBtn,title,12,C.secondary,true); lbl.Position=UDim2.fromOffset(46,0); lbl.Size=UDim2.new(1,-54,1,0); lbl.ZIndex=18
 
-    local page=make("ScrollingFrame",{
-        Name="Page_"..title,BackgroundTransparency=1,Size=UDim2.fromScale(1,1),Position=UDim2.fromScale(0,0),
-        CanvasSize=UDim2.new(0,0,0,0),ScrollBarThickness=3,ScrollBarImageColor3=C.Muted,
-        BorderSizePixel=0,Visible=false,ZIndex=6,Active=true,
-    },self._body)
-    addPadding(page,2,4,4,10)
+    local page=make("ScrollingFrame",{Name="Page_"..cleanName(title),BackgroundTransparency=1,BorderSizePixel=0,Size=UDim2.fromScale(1,1),CanvasSize=UDim2.new(),AutomaticCanvasSize=Enum.AutomaticSize.Y,ScrollBarThickness=4,ScrollBarImageColor3=C.muted,ScrollingDirection=Enum.ScrollingDirection.Y,Visible=false,ZIndex=11},self._content)
+    padding(page,16,16,16,30)
 
-    local tab=setmetatable({
-        _window=self,_button=tabBtn,_btn=tabBtn,_scroll=page,_body=page,
-        _title=title,_name=title,_icon=ico,_iconImg=tabIcon,_label=lbl,_tabs={},
-        _sections={},_lastSection=nil,_alive=true,_mobile=self._mobile,
-        _topStack=nil,_leftCol=nil,_rightCol,_order=0,
-    },Tab)
-    -- tab-local stacks
-    local topStack=make("Frame",{Name="TopStack",BackgroundTransparency=1,Size=UDim2.new(1,-4,0,0),Position=UDim2.fromOffset(0,0),AutomaticSize=Enum.AutomaticSize.Y,ZIndex=7},page)
-    local topLayout=make("UIListLayout",{Name="UIListLayout",Padding=UDim.new(0,8),SortOrder=Enum.SortOrder.LayoutOrder},topStack)
-    local left=make("Frame",{Name="LeftColumn",BackgroundTransparency=1,Size=UDim2.new(0.5,-5,0,0),Position=UDim2.fromOffset(0,70),AutomaticSize=Enum.AutomaticSize.Y,ZIndex=7},page)
-    local right=make("Frame",{Name="RightColumn",BackgroundTransparency=1,Size=UDim2.new(0.5,-5,0,0),Position=UDim2.new(0.5,5,0,70),AutomaticSize=Enum.AutomaticSize.Y,ZIndex=7},page)
-    make("UIListLayout",{Name="UIListLayout",Padding=UDim.new(0,10),SortOrder=Enum.SortOrder.LayoutOrder},left)
-    make("UIListLayout",{Name="UIListLayout",Padding=UDim.new(0,10),SortOrder=Enum.SortOrder.LayoutOrder},right)
-    tab._topStack=topStack;tab._leftCol=left;tab._rightCol=right;tab._headerLayout=topLayout
-
+    local tab=setmetatable({_window=self,_btn=tabBtn,_icon=ico,_label=lbl,_page=page,_title=title,_iconName=iconName,_order=0,_sections={},_controls={},_settingsBento=(string.lower(title)=="settings")},Tab)
     table.insert(self._tabs,tab)
-    bindActivate(tabBtn,function() self:_select(tab) end)
-    if #self._tabs==1 then self:_select(tab) end
+    if tab._settingsBento then self._settingsTab=tab end
+
+    tabBtn.Activated:Connect(function() self:SelectTab(#self._tabs) end)
+    if #self._tabs==1 then self:SelectTab(1) end
     return tab
 end
 
-function Window:_select(tab)
-    if not self._alive or not tab then return end
-    self._active=tab
-    self._selected=tab
-    for _,t in ipairs(self._tabs) do
-        local on=t==tab
-        t._scroll.Visible=on
-        t._btn.BackgroundColor3=on and C.AccentSoft or C.Card2
-        t._label.TextColor3=on and C.Text or C.Secondary
-        if t._iconImg then t._iconImg.ImageColor3=on and C.Accent or C.Muted end
-    end
-end
-
-function Window:GetTab(name)
-    name=tostring(name or "")
-    for _,tab in ipairs(self._tabs) do
-        if tab._title==name or tab._name==name then return tab end
-    end
+function Window:GetTab(title)
+    local wanted=string.lower(tostring(title or ""))
+    for _,t in ipairs(self._tabs) do if string.lower(t._title)==wanted then return t end end
 end
 
 function Window:SelectTab(index)
-    local tab
-    if type(index)=="number" then tab=self._tabs[index]
-    elseif type(index)=="string" then tab=self:GetTab(index) end
-    if tab then self:_select(tab) return tab end
+    local tab=type(index)=="table" and index or self._tabs[tonumber(index) or 1]
+    if not tab then return end
+    self._selected=tab
+    for _,t in ipairs(self._tabs) do
+        local on=t==tab
+        t._page.Visible=on
+        t._btn.BackgroundColor3=on and C.accentSoft or C.row
+        t._label.TextColor3=on and C.text or C.secondary
+        if t._icon and t._icon:IsA("GuiObject") then
+            local img=t._icon:FindFirstChildWhichIsA("ImageLabel",true)
+            if img then img.ImageColor3=on and C.accent or C.muted end
+        end
+    end
 end
 
 function Window:Toggle()
-    if not self._alive then return false end
     self._open=not self._open
-    self._visible=self._open
-    self._gui.Enabled=self._open
-    if self._open and not self._minimized then
-        self:_applyResponsive()
-    end
-    return self._open
-end
-
-function Window:_applyResponsive()
-    local v=viewport();local m=v.X<760 or v.Y<520
-    self._mobile=m
-    local w=m and math.max(300,math.min(v.X-16, self._shell.AbsoluteSize.X)) or math.max(620,math.min(v.X-44, self._shell.AbsoluteSize.X))
-    local h=m and math.max(300,math.min(v.Y-24, self._shell.AbsoluteSize.Y)) or math.max(420,math.min(v.Y-44, self._shell.AbsoluteSize.Y))
-    self._shell.Size=UDim2.fromOffset(w,h)
-    for _,tab in ipairs(self._tabs) do tab:_reflow() end
-end
-
-function Window:Open()
-    if not self._alive then return end
-    self._open=true;self._visible=true;self._gui.Enabled=true
-    if self._minimized then self:Minimize() end
-    self:_applyResponsive()
-end
-function Window:Close()
-    if not self._alive then return end
-    self._open=false;self._visible=false;self._gui.Enabled=false
-end
-function Window:Minimize()
-    if not self._alive then return end
-    self._minimized=not self._minimized
-    if self._minimized then
-        self._body.Visible=false
-        self._rail.Visible=false
-        self._top.Size=UDim2.new(1,-20,0,64)
-        self._top.Position=UDim2.fromOffset(10,10)
-        self._shell.Size=UDim2.fromOffset(math.max(340,self._shell.AbsoluteSize.X),84)
+    if self._open then
+        self._shell.Visible=true
+        tween(self._shell,Motion.smooth,{Position=UDim2.fromScale(0.5,0.5)})
     else
-        self._body.Visible=true;self._rail.Visible=true
-        self:_applyResponsive()
+        self._shell.Visible=false
     end
+end
+function Window:Minimize() self._open=false; self._shell.Visible=false end
+function Window:Open() self._open=true; self._shell.Visible=true end
+function Window:Destroy()
+    for _,c in ipairs(self._connections or {}) do pcall(function() c:Disconnect() end) end
+    for i,v in ipairs(UI._windows) do if v==self then table.remove(UI._windows,i) break end end
+    if self._floatingGui then pcall(function() self._floatingGui:Destroy() end) end
+    if self._gui then pcall(function() self._gui:Destroy() end) end
 end
 function Window:ToggleAcrylic() end
-
-function Window:SetLogo(asset)
-    if type(asset)~="string" or asset=="" then return end
-    if not self._logo then
-        self._logo=make("ImageLabel",{
-            Name="HubLogo",BackgroundTransparency=1,Size=UDim2.fromOffset(34,34),Position=UDim2.fromOffset(12,12),
-            ScaleType=Enum.ScaleType.Fit,ZIndex=14,
-        },self._brand)
-        self._logoCorner=nil
-        self._brandIcon.Visible=false
+function Window:SetBackground(asset, transparency)
+    if not self._background then
+        self._background=make("ImageLabel",{Name="Background",BackgroundTransparency=1,BorderSizePixel=0,Size=UDim2.fromScale(1,1),ScaleType=Enum.ScaleType.Crop,ZIndex=0},self._shell)
+        self._backgroundTint=make("Frame",{BackgroundColor3=C.canvas,BackgroundTransparency=0.55,BorderSizePixel=0,Size=UDim2.fromScale(1,1),ZIndex=1},self._shell)
     end
-    self._logo.Image=asset
-    self._logo.ImageTransparency=0
+    self._background.Image=tostring(asset or "")
+    self._background.ImageTransparency=tonumber(transparency) or 0.62
 end
-
-function Window:SetBackground(asset, transparency, tintTransparency)
-    if type(asset)~="string" or asset=="" then return end
-    self._background.Image=asset
-    self._background.ImageTransparency=tonumber(transparency) or 0.58
-    self._background.Visible=true
-    self._backgroundTint.BackgroundColor3=C.Canvas
-    self._backgroundTint.BackgroundTransparency=tonumber(tintTransparency) or 0.38
+function Window:SetLogo(asset)
+    if self._logo then self._logo:Destroy() end
+    self._logo=make("ImageLabel",{BackgroundTransparency=1,Size=UDim2.fromScale(1,1),Image=tostring(asset or ""),ScaleType=Enum.ScaleType.Fit,ZIndex=23},self._logoHolder)
 end
-
+function Window:SetFloatingVisible(v)
+    if self._floatingGui then self._floatingGui.Enabled = v ~= false end
+end
 function Window:CreateFloatingToggle(config)
     config=config or {}
-    if self._floating and self._floating.Parent then self._floating:Destroy() end
-    local sg=make("ScreenGui",{
-        Name="KhfreshFloating",ResetOnSpawn=false,IgnoreGuiInset=true,
-        DisplayOrder=2147483644,ZIndexBehavior=Enum.ZIndexBehavior.Sibling,Enabled=true,
-    },GUI_PARENT)
-    pcall(function()if syn and syn.protect_gui then syn.protect_gui(sg) end end)
-    local btn=button(sg,{
-        Name="FloatingButton",Size=UDim2.fromOffset(58,58),Position=UDim2.new(1,-74,1,-74),
-        BackgroundColor3=C.Shell,ZIndex=20,
-    })
-    round(btn,18);outline(btn,C.Line,0.3,1)
-    local iconName=config.Icon or "volleyball"
-    icon(btn,iconName,UDim2.fromOffset(15,15),UDim2.fromOffset(28,28),C.Accent,22)
-
+    if self._floatingGui then pcall(function() self._floatingGui:Destroy() end) end
+    local sg=make("ScreenGui",{Name="KhfreshFloatingGui",ResetOnSpawn=false,IgnoreGuiInset=true,DisplayOrder=2147483630,ZIndexBehavior=Enum.ZIndexBehavior.Sibling},GuiParent)
+    self._floatingGui=sg
+    local btn=make("TextButton",{Text="",BackgroundColor3=C.shell,BorderSizePixel=0,Size=UDim2.fromOffset(58,58),Position=UDim2.new(0,16,0.5,-29),AutoButtonColor=false,Active=true,ZIndex=10},sg)
+    corner(btn,19); outline(btn,C.line,0.2,1)
+    renderIcon(btn,"volleyball",UDim2.fromOffset(14,14),UDim2.fromOffset(30,30),C.accent,12)
+    btn.Activated:Connect(function() self:Toggle() end)
     local scale=make("UIScale",{Scale=1},btn)
-    btn.MouseEnter:Connect(function() tween(scale,TweenInfo.new(0.16,Enum.EasingStyle.Quint,Enum.EasingDirection.Out),{Scale=1.06}) end)
-    btn.MouseLeave:Connect(function() tween(scale,TweenInfo.new(0.16,Enum.EasingStyle.Quint,Enum.EasingDirection.Out),{Scale=1.0}) end)
-
-    local dragging=false;local moved=false;local dragStart=nil;local startPos=nil
-    btn.InputBegan:Connect(function(input)
-        if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then
-            dragging=true;moved=false;dragStart=input.Position;startPos=btn.Position
-        end
-    end)
-    btn.InputEnded:Connect(function(input)
-        if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then dragging=false end
-    end)
-    local conn=UserInputService.InputChanged:Connect(function(input)
-        if not dragging then return end
-        if input.UserInputType~=Enum.UserInputType.MouseMovement and input.UserInputType~=Enum.UserInputType.Touch then return end
-        local delta=input.Position-dragStart
-        if math.abs(delta.X)+math.abs(delta.Y)>6 then moved=true end
-        btn.Position=UDim2.new(startPos.X.Scale,startPos.X.Offset+delta.X,startPos.Y.Scale,startPos.Y.Offset+delta.Y)
-    end)
-    sg.AncestryChanged:Connect(function(_,parent) if not parent then pcall(function()conn:Disconnect()end) end end)
-    bindActivate(btn,function() if not moved then self:Toggle() end end)
-    self._floating=sg
+    btn.MouseEnter:Connect(function() tween(scale,Motion.fast,{Scale=1.06}) end)
+    btn.MouseLeave:Connect(function() tween(scale,Motion.fast,{Scale=1}) end)
     return sg
 end
 
-function Window:Destroy()
-    if not self._alive then return end
-    self._alive=false
-    for _,c in ipairs(self._connections) do pcall(function() c:Disconnect() end) end
-    if self._floating then pcall(function() self._floating:Destroy() end) end
-    if self._gui then pcall(function() self._gui:Destroy() end) end
-    for i,v in ipairs(Library._windows) do if v==self then table.remove(Library._windows,i) break end end
+local function makePageLayout(tab)
+    if tab._settingsBento then
+        local wrap=make("Frame",{Name="SettingsGrid",BackgroundTransparency=1,Size=UDim2.new(1,0,0,0),AutomaticSize=Enum.AutomaticSize.Y},tab._page)
+        local columns={
+            make("Frame",{Name="Left",BackgroundTransparency=1,Size=UDim2.new(0.5,-6,0,0),AutomaticSize=Enum.AutomaticSize.Y},wrap),
+            make("Frame",{Name="Right",BackgroundTransparency=1,Size=UDim2.new(0.5,-6,0,0),AutomaticSize=Enum.AutomaticSize.Y,Position=UDim2.new(0.5,6,0,0)},wrap),
+        }
+        list(columns[1],10); list(columns[2],10)
+        return wrap, columns
+    end
+    local direct=make("Frame",{Name="Elements",BackgroundTransparency=1,Size=UDim2.new(1,0,0,0),AutomaticSize=Enum.AutomaticSize.Y},tab._page)
+    list(direct,10)
+    return direct, {direct}
 end
 
--- ================================================================
--- NOTIFICATIONS
--- ================================================================
-function Library:Notify(config)
-    config=config or {}
-    if not self._notificationGui or not self._notificationGui.Parent then
-        self._notificationGui=make("ScreenGui",{
-            Name="KhfreshNotifications",ResetOnSpawn=false,IgnoreGuiInset=true,
-            DisplayOrder=2147483000,ZIndexBehavior=Enum.ZIndexBehavior.Sibling,
-        },GUI_PARENT)
-        self._notificationHost=make("Frame",{
-            BackgroundTransparency=1,Size=UDim2.fromScale(1,1),
-        },self._notificationGui)
-        addPadding(self._notificationHost,0,16,0,16)
-        local lay=make("UIListLayout",{Padding=UDim.new(0,8),SortOrder=Enum.SortOrder.LayoutOrder,HorizontalAlignment=Enum.HorizontalAlignment.Right,VerticalAlignment=Enum.VerticalAlignment.Bottom},self._notificationHost)
+function Tab:_ensureHost()
+    if self._host then return end
+    self._host,self._columns=makePageLayout(self)
+    self._settingsCounter=0
+    self._settingsWrap=self._host
+    self._settingsColumns=self._columns
+end
+
+function Tab:_layoutSettings()
+    if not self._settingsBento or not self._settingsColumns then return end
+    local vp=viewport()
+    local mobile=vp.X < 700 or UserInputService.TouchEnabled and vp.X < 850
+    local left,right=self._settingsColumns[1],self._settingsColumns[2]
+    if mobile then
+        left.Size=UDim2.new(1,0,0,0)
+        right.Size=UDim2.new(1,0,0,0)
+        right.Position=UDim2.new(0,0,0,left.AbsoluteSize.Y+10)
+    else
+        left.Size=UDim2.new(0.5,-6,0,0)
+        right.Size=UDim2.new(0.5,-6,0,0)
+        right.Position=UDim2.new(0.5,6,0,0)
     end
-    local card=make("Frame",{
-        BackgroundColor3=C.Shell,BorderSizePixel=0,Size=UDim2.fromOffset(320,72),LayoutOrder=-math.floor(os.clock()*1000),
-    },self._notificationHost)
-    round(card,15);outline(card,C.Accent,0.38,1)
-    icon(card,config.Icon or "info",UDim2.fromOffset(14,22),UDim2.fromOffset(24,24),C.Accent,5)
-    local title=text(card,config.Title or "Khfresh",12,C.Text,true);title.Position=UDim2.fromOffset(48,10);title.Size=UDim2.new(1,-60,0,20)
-    local msg=text(card,config.Content or config.Message or "",10,C.Secondary,false);msg.Position=UDim2.fromOffset(48,31);msg.Size=UDim2.new(1,-60,0,30);msg.TextWrapped=true
-    task.delay(tonumber(config.Duration) or 3,function()
-        if card.Parent then
-            tween(card,TweenInfo.new(0.18,Enum.EasingStyle.Quad,Enum.EasingDirection.In),{BackgroundTransparency=1})
-            task.wait(0.18);if card.Parent then card:Destroy() end
+end
+
+function Tab:_insertSection(section)
+    self:_ensureHost()
+    if self._settingsBento then
+        local side=section._side
+        if side=="left" then section._parent=self._columns[1]
+        elseif side=="right" then section._parent=self._columns[2]
+        else
+            self._settingsCounter += 1
+            section._parent=self._columns[(((self._settingsCounter-1)%2)+1]
+        end
+        section._frame.Parent=section._parent
+    else
+        section._frame.Parent=self._columns[1]
+    end
+    section._frame.LayoutOrder=#section._parent:GetChildren()
+    self:_layoutSettings()
+end
+
+function Tab:CreateHeader(config)
+    config=type(config)=="table" and config or {Title=tostring(config or "")}
+    self:_ensureHost()
+    local frame=make("Frame",{Name="Header",BackgroundTransparency=1,Size=UDim2.new(1,0,0,52),LayoutOrder=#self._host:GetChildren()+1},self._columns[1])
+    if config.Icon then renderIcon(frame,config.Icon,UDim2.fromOffset(0,10),UDim2.fromOffset(22,22),C.accent,5) end
+    local x=config.Icon and 30 or 0
+    local t=text(frame,config.Title or "",17,C.text,true); t.Position=UDim2.fromOffset(x,0); t.Size=UDim2.new(1,-x,0,27)
+    local s=text(frame,config.Subtitle or config.Desc or "",11,C.muted,false); s.Position=UDim2.fromOffset(x,28); s.Size=UDim2.new(1,-x,0,20)
+    return frame
+end
+
+function Tab:CreateSection(nameOrConfig, side)
+    local config=type(nameOrConfig)=="table" and nameOrConfig or {Title=nameOrConfig}
+    local name=tostring(config.Title or config.Name or "Section")
+    local sideName=type(side)=="string" and string.lower(side) or (type(config.Side)=="string" and string.lower(config.Side) or nil)
+    self:_ensureHost()
+    local frame=make("Frame",{Name="Section_"..cleanName(name),BackgroundColor3=C.card,BorderSizePixel=0,Size=UDim2.new(1,0,0,0),AutomaticSize=Enum.AutomaticSize.Y,LayoutOrder=1,ClipsDescendants=false,ZIndex=30},nil)
+    if not self._settingsBento then
+        frame.BackgroundTransparency = 1
+    else
+        corner(frame,18); outline(frame,C.lineSoft,0.18,1)
+    end
+    local header=make("Frame",{BackgroundTransparency=1,Size=UDim2.new(1,0,0,43),ZIndex=31},frame)
+    renderIcon(header,config.Icon or "layers",UDim2.fromOffset(14,12),UDim2.fromOffset(18,18),C.accent,33)
+    local title=text(header,name,13,C.text,true); title.Position=UDim2.fromOffset(40,0); title.Size=UDim2.new(1,-52,1,0); title.ZIndex=33
+    local body=make("Frame",{BackgroundTransparency=1,Size=UDim2.new(1,0,0,0),AutomaticSize=Enum.AutomaticSize.Y,Position=UDim2.fromOffset(0,43),ZIndex=32},frame)
+    padding(body,10,10,0,12); list(body,8)
+    local section=setmetatable({_tab=self,_frame=frame,_body=body,_name=name,_side=sideName,_order=0},Section)
+    table.insert(self._sections,section)
+    self:_insertSection(section)
+    return section
+end
+
+-- Direct tab controls create clean single rows outside a section.
+function Tab:_directSection()
+    if self._direct then return self._direct end
+    local s=self:CreateSection({Title=""})
+    local header=s._frame:FindFirstChild("Frame")
+    if header then header.Visible=false; s._body.Position=UDim2.fromOffset(0,0) end
+    self._direct=s
+    return s
+end
+
+function Tab:CreateButton(config) return self:_directSection():CreateButton(config) end
+function Tab:CreateToggle(config) return self:_directSection():CreateToggle(config) end
+function Tab:CreateDropdown(config) return self:_directSection():CreateDropdown(config) end
+function Tab:CreateMultiDropdown(config) return self:_directSection():CreateMultiDropdown(config) end
+function Tab:CreateTextbox(config) return self:_directSection():CreateTextbox(config) end
+function Tab:CreateSlider(config) return self:_directSection():CreateSlider(config) end
+function Tab:CreateColorpicker(config) return self:_directSection():CreateColorpicker(config) end
+function Tab:CreateStatRow() end
+function Tab:CreateFeaturedCard() end
+function Tab:CreateActionRow() end
+function Tab:CreateCardGroup() end
+
+local function attachRow(section, name, iconName, height)
+    section._order+=1
+    local row=make("Frame",{Name="Row_"..cleanName(name),BackgroundColor3=C.row,BorderSizePixel=0,Size=UDim2.new(1,0,0,height or 48),LayoutOrder=section._order,ClipsDescendants=false,ZIndex=60},section._body)
+    corner(row,13); outline(row,C.lineSoft,0.35,1)
+    if iconName then renderIcon(row,iconName,UDim2.fromOffset(12,12),UDim2.fromOffset(22,22),C.muted,63) end
+    return row
+end
+
+function Section:CreateLabel(value)
+    local row=attachRow(self,"Label",nil,36)
+    local t=text(row,value,12,C.secondary,false); t.Position=UDim2.fromOffset(12,0); t.Size=UDim2.new(1,-24,1,0)
+    return row
+end
+
+function Section:CreateButton(config)
+    config=config or {}
+    local row=attachRow(self,config.Name or config.Title or "Button",config.Icon,48)
+    local t=text(row,config.Name or config.Title or "Button",13,C.text,true)
+    t.Position=UDim2.fromOffset(config.Icon and 42 or 14,0); t.Size=UDim2.new(1,-58,1,0); t.ZIndex=63
+    renderIcon(row,"chevron-right",UDim2.new(1,-31,0.5,-9),UDim2.fromOffset(18,18),C.muted,63)
+    local hit=button(row,90)
+    hit.Activated:Connect(function() if config.Callback then task.spawn(config.Callback) end end)
+    hoverRow(row)
+    return {_frame=row,Activate=function() if config.Callback then config.Callback() end end}
+end
+
+function Section:CreateToggle(config)
+    config=config or {}
+    local state=config.Default==true or config.Value==true
+    local row=attachRow(self,config.Name or config.Title or "Toggle",config.Icon,48)
+    local t=text(row,config.Name or config.Title or "Toggle",13,C.text,true)
+    t.Position=UDim2.fromOffset(config.Icon and 42 or 14,0); t.Size=UDim2.new(1,-92,1,0); t.ZIndex=63
+    local track=make("Frame",{BackgroundColor3=state and C.accent or Color3.fromRGB(48,54,65),BorderSizePixel=0,AnchorPoint=Vector2.new(1,0.5),Position=UDim2.new(1,-12,0.5,0),Size=UDim2.fromOffset(48,28),ZIndex=64},row)
+    corner(track,99)
+    local knob=make("Frame",{BackgroundColor3=C.text,BorderSizePixel=0,Size=UDim2.fromOffset(22,22),Position=state and UDim2.new(1,-25,0.5,-11) or UDim2.fromOffset(3,3),ZIndex=65},track)
+    corner(knob,99)
+    local hit=button(row,95)
+    local function set(v,emit)
+        state=v==true
+        tween(track,Motion.base,{BackgroundColor3=state and C.accent or Color3.fromRGB(48,54,65)})
+        tween(knob,Motion.base,{Position=state and UDim2.new(1,-25,0.5,-11) or UDim2.fromOffset(3,3)})
+        if emit and config.Callback then task.spawn(config.Callback,state) end
+    end
+    hit.Activated:Connect(function() set(not state,true) end)
+    hoverRow(row)
+    return {Set=function(_,v) set(v,true) end, SetValue=function(_,v) set(v,true) end, Get=function() return state end, GetValue=function() return state end, _frame=row}
+end
+
+local function optionList(options)
+    local out={}
+    if type(options)~="table" then return out end
+    for _,v in ipairs(options) do
+        if type(v)=="table" then v=v.Title or v.Name or v.Value or v.Text or v[1] end
+        if v~=nil then out[#out+1]=tostring(v) end
+    end
+    return out
+end
+
+function Section:CreateDropdown(config)
+    config=config or {}
+    local options=optionList(config.Options or config.Values or {})
+    local selected=tostring(config.Default or config.Value or options[1] or "Select")
+    local open=false
+    local baseH=52
+    local row=attachRow(self,config.Name or config.Title or "Dropdown",config.Icon,baseH)
+    local t=text(row,config.Name or config.Title or "Dropdown",12,C.secondary,true); t.Position=UDim2.fromOffset(config.Icon and 42 or 14,0); t.Size=UDim2.new(0.48,-42,0,48); t.ZIndex=63
+    local value=text(row,selected,12,C.text,false); value.Position=UDim2.new(0.48,0,0,0); value.Size=UDim2.new(0.52,-48,0,48); value.TextXAlignment=Enum.TextXAlignment.Right; value.ZIndex=63
+    renderIcon(row,"chevron-down",UDim2.new(1,-34,0.5,-8),UDim2.fromOffset(16,16),C.muted,64)
+
+    local menu=make("ScrollingFrame",{Name="DropdownMenu",BackgroundColor3=C.shell,BorderSizePixel=0,Position=UDim2.fromOffset(8,48),Size=UDim2.new(1,-16,0,0),CanvasSize=UDim2.new(0,0,0,0),AutomaticCanvasSize=Enum.AutomaticSize.Y,Visible=false,ScrollBarThickness=2,ScrollBarImageColor3=C.muted,ZIndex=2000},row)
+    corner(menu,12); outline(menu,C.line,0.15,1); padding(menu,5,5,5,5); list(menu,4)
+    local hit=button(row,100)
+    local function closeMenu()
+        open=false; menu.Visible=false
+    end
+    local function choose(v)
+        selected=v; value.Text=v; closeMenu()
+        if config.Callback then task.spawn(config.Callback,v) end
+    end
+    for _,opt in ipairs(options) do
+        local ob=make("TextButton",{Name="Option_"..cleanName(opt),Text="",BackgroundColor3=C.row,BorderSizePixel=0,Size=UDim2.new(1,0,0,34),AutoButtonColor=false,ZIndex=2010},menu)
+        corner(ob,9)
+        local ot=text(ob,opt,11,C.secondary,false); ot.Position=UDim2.fromOffset(10,0); ot.Size=UDim2.new(1,-20,1,0); ot.ZIndex=2012
+        ob.Activated:Connect(function() choose(opt) end); hoverRow(ob)
+    end
+    hit.Activated:Connect(function()
+        open=not open
+        menu.Visible=open
+        row.ZIndex=open and 1200 or 60
+        if open then menu.CanvasPosition=Vector2.zero end
+    end)
+    hoverRow(row)
+    return {Set=function(_,v) choose(tostring(v)) end,SetValue=function(_,v) choose(tostring(v)) end,Get=function() return selected end,_frame=row,_menu=menu}
+end
+
+function Section:CreateMultiDropdown(config)
+    config=config or {}
+    local options=optionList(config.Options or config.Values or {})
+    local selected={}
+    if type(config.Default)=="table" then for _,v in ipairs(config.Default) do selected[tostring(v)]=true end end
+    local row=attachRow(self,config.Name or config.Title or "Multi Dropdown",config.Icon,52)
+    local t=text(row,config.Name or config.Title or "Multi Dropdown",12,C.secondary,true); t.Position=UDim2.fromOffset(config.Icon and 42 or 14,0); t.Size=UDim2.new(0.45,-42,1,0); t.ZIndex=63
+    local val=text(row,"None",11,C.text,false); val.Position=UDim2.new(0.45,0,0,0); val.Size=UDim2.new(0.55,-46,1,0); val.TextXAlignment=Enum.TextXAlignment.Right; val.ZIndex=63
+    renderIcon(row,"chevron-down",UDim2.new(1,-34,0.5,-8),UDim2.fromOffset(16,16),C.muted,64)
+    local menu=make("ScrollingFrame",{Name="MultiDropdownMenu",BackgroundColor3=C.shell,BorderSizePixel=0,Position=UDim2.fromOffset(8,48),Size=UDim2.new(1,-16,0,0),AutomaticCanvasSize=Enum.AutomaticSize.Y,CanvasSize=UDim2.new(),Visible=false,ScrollBarThickness=2,ScrollBarImageColor3=C.muted,ZIndex=2000},row)
+    corner(menu,12); outline(menu,C.line,0.15,1); padding(menu,5,5,5,5); list(menu,4)
+    local open=false
+    local function updateLabel()
+        local arr={}; for _,v in ipairs(options) do if selected[v] then arr[#arr+1]=v end end
+        val.Text=(#arr==0 and "None" or (#arr<=2 and table.concat(arr,", ") or tostring(#arr).." selected"))
+    end
+    for _,opt in ipairs(options) do
+        local ob=make("TextButton",{Name="Option_"..cleanName(opt),Text="",BackgroundColor3=C.row,BorderSizePixel=0,Size=UDim2.new(1,0,0,34),AutoButtonColor=false,ZIndex=2010},menu)
+        corner(ob,9)
+        local ot=text(ob,opt,11,C.secondary,false); ot.Position=UDim2.fromOffset(10,0); ot.Size=UDim2.new(1,-46,1,0); ot.ZIndex=2012
+        local mark=make("Frame",{BackgroundTransparency=1,Size=UDim2.fromOffset(18,18),Position=UDim2.new(1,-26,0.5,-9),ZIndex=2012},ob)
+        local function updateMark() mark:ClearAllChildren(); if selected[opt] then local c=make("Frame",{BackgroundTransparency=1,Size=UDim2.fromScale(1,1)},mark); drawLine(c,4,9,8,13,C.accent,2,2014); drawLine(c,8,13,15,5,C.accent,2,2014) end end
+        updateMark()
+        ob.Activated:Connect(function()
+            selected[opt]=not selected[opt]; updateMark(); updateLabel()
+            local arr={}; for _,v in ipairs(options) do if selected[v] then arr[#arr+1]=v end end
+            if config.Callback then task.spawn(config.Callback,arr) end
+        end)
+        hoverRow(ob)
+    end
+    local hit=button(row,100)
+    hit.Activated:Connect(function() open=not open; menu.Visible=open; row.ZIndex=open and 1200 or 60 end)
+    updateLabel(); hoverRow(row)
+    return {Set=function(_,v) if type(v)=="table" then selected={};for _,x in ipairs(v) do selected[tostring(x)]=true end; updateLabel() end end,Get=function() local out={};for _,v in ipairs(options) do if selected[v] then out[#out+1]=v end end;return out end,_frame=row,_menu=menu}
+end
+
+function Section:CreateTextbox(config)
+    config=config or {}
+    local row=attachRow(self,config.Name or config.Title or "Input",config.Icon,50)
+    local t=text(row,config.Name or config.Title or "Input",12,C.secondary,true); t.Position=UDim2.fromOffset(config.Icon and 42 or 14,0); t.Size=UDim2.new(0.40,-42,1,0); t.ZIndex=63
+    local box=make("TextBox",{BackgroundColor3=C.shell,BorderSizePixel=0,Text=tostring(config.Default or config.Value or ""),PlaceholderText=tostring(config.Placeholder or ""),TextColor3=C.text,PlaceholderColor3=C.muted,TextSize=12,Font=Enum.Font.Gotham,ClearTextOnFocus=false,TextXAlignment=Enum.TextXAlignment.Left,Size=UDim2.new(0.58,-8,0,34),Position=UDim2.new(0.40,0,0.5,-17),ZIndex=65},row)
+    corner(box,10); outline(box,C.lineSoft,0.2,1); padding(box,10,10,0,0)
+    local function emit() if config.Callback then task.spawn(config.Callback,box.Text) end end
+    box.FocusLost:Connect(emit)
+    hoverRow(row)
+    return {Set=function(_,v) box.Text=tostring(v or "");emit() end,SetValue=function(_,v) box.Text=tostring(v or "");emit() end,Get=function() return box.Text end,_frame=row,_input=box}
+end
+
+function Section:CreateSlider(config)
+    config=config or {}
+    local min=tonumber(config.Min or config.Minimum or 0) or 0
+    local max=tonumber(config.Max or config.Maximum or 100) or 100
+    local current=tonumber(config.Default or config.Value or min) or min
+    current=math.clamp(current,min,max)
+    local row=attachRow(self,config.Name or config.Title or "Slider",config.Icon,64)
+    local t=text(row,config.Name or config.Title or "Slider",12,C.secondary,true); t.Position=UDim2.fromOffset(config.Icon and 42 or 14,5); t.Size=UDim2.new(0.48,-42,0,22); t.ZIndex=63
+    local value=text(row,tostring(current),11,C.text,true); value.Position=UDim2.new(1,-72,0,5); value.Size=UDim2.fromOffset(58,22); value.TextXAlignment=Enum.TextXAlignment.Right; value.ZIndex=63
+    local track=make("Frame",{BackgroundColor3=C.shell,BorderSizePixel=0,Position=UDim2.new(0,14,1,-22),Size=UDim2.new(1,-28,0,6),ZIndex=63},row);corner(track,99)
+    local fill=make("Frame",{BackgroundColor3=C.accent,BorderSizePixel=0,Size=UDim2.new((current-min)/math.max(1,max-min),0,1,0),ZIndex=64},track);corner(fill,99)
+    local hit=button(track,70)
+    local function setFromX(x,emit)
+        local pct=math.clamp((x-track.AbsolutePosition.X)/math.max(1,track.AbsoluteSize.X),0,1)
+        current=math.floor((min+(max-min)*pct)+0.5)
+        value.Text=tostring(current); fill.Size=UDim2.new(pct,0,1,0)
+        if emit and config.Callback then task.spawn(config.Callback,current) end
+    end
+    hit.Activated:Connect(function() end)
+    hit.InputBegan:Connect(function(input)
+        if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then
+            setFromX(input.Position.X,true)
+            local con
+            con=UserInputService.InputChanged:Connect(function(move)
+                if move.UserInputType==Enum.UserInputType.MouseMovement or move.UserInputType==Enum.UserInputType.Touch then setFromX(move.Position.X,true) end
+            end)
+            input.Changed:Connect(function() if input.UserInputState==Enum.UserInputState.End and con then con:Disconnect() end end)
         end
     end)
+    return {Set=function(_,v) current=math.clamp(tonumber(v) or min,min,max);local pct=(current-min)/math.max(1,max-min);value.Text=tostring(current);fill.Size=UDim2.new(pct,0,1,0);if config.Callback then config.Callback(current) end end,Get=function() return current end,_frame=row}
 end
 
-Library.Lucide = Lucide
-Library.Theme = THEMES
+function Section:CreateColorpicker(config)
+    config=config or {}
+    -- Compact color control. Kept intentionally dependency-free.
+    local row=attachRow(self,config.Name or config.Title or "Color",config.Icon,48)
+    local t=text(row,config.Name or config.Title or "Color",13,C.text,true); t.Position=UDim2.fromOffset(config.Icon and 42 or 14,0); t.Size=UDim2.new(1,-86,1,0); t.ZIndex=63
+    local swatch=make("Frame",{BackgroundColor3=config.Default or Color3.new(1,1,1),BorderSizePixel=0,AnchorPoint=Vector2.new(1,0.5),Position=UDim2.new(1,-14,0.5,0),Size=UDim2.fromOffset(36,24),ZIndex=64},row);corner(swatch,9);outline(swatch,C.line,0.2,1)
+    return {Set=function(_,v)if typeof(v)=="Color3" then swatch.BackgroundColor3=v end end,Get=function()return swatch.BackgroundColor3 end,_frame=row}
+end
 
-return Library
+return UI
