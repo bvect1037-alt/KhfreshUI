@@ -1,8 +1,12 @@
 --[[
-  Khfresh Bento UI v2
-  True Bento Grid layout • Lucide icons (Footagesus Main-v2)
-  Distinct from Nexus Material — modular cards, grid metrics, feature tiles
-  Target: 3000+ lines, mobile-safe, no EditableImage pixel icons
+ _  __ _   _  ____ ____  _____ ____  _   _    _   _ _   _ ____
+| |/ /| | | | |  _ \| ____/ ___|| | | |  | | | | | | | __ )
+| ' / | |_| | |_  | |_) |  _| \___ \| |_| |  | |_| | | | |  _ \
+| . \ |  _  | |  _ <| |___ ___) |  _  |  |  _  | |_| | |_) |
+|_|\_\|_| |_| \_\_____|____/|_| |_|  |_| |_|\___/|____/
+
+     Khfresh UI  •  Bento Grid Style
+     Based on Bento  •  Japanese Modular Design
 ]]
 
 local TweenService = game:GetService("TweenService")
