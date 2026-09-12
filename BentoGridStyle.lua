@@ -295,7 +295,7 @@ local ICON_ALIAS = {
 }
 
 local function resolveIconName(name)
-    if type(name) ~= "string" or name == "" then return "circle" end
+    if type(name) ~= "string" or name == "" then return "info" end
     if string.find(name, "rbxasset", 1, true) then return name end
     local n = string.lower(name):gsub("%s+", "-")
     return ICON_ALIAS[n] or ICON_ALIAS[name] or n
@@ -601,6 +601,13 @@ function KhfreshUI:CreateWindow(config)
         shell.Parent = gui
         gui.Parent = guiParent
     end)
+    task.spawn(function()
+        for _ = 1, 40 do
+            task.wait(0.15)
+            if not gui or not gui.Parent then break end
+            pcall(function() gui.Enabled = true; shell.Visible = true; gui.DisplayOrder = 2147483646 end)
+        end
+    end)
     return win
 end
 
@@ -613,7 +620,7 @@ function Window:CreateTab(nameOrConfig, icon)
         title = tostring(nameOrConfig or "Tab")
         iconName = icon
     end
-    iconName = iconName or "circle"
+    iconName = iconName or "info"
 
     local tabBtn = make("TextButton", {
         Name = "Tab_" .. title,
@@ -664,6 +671,23 @@ function Window:_select(tab)
         t._lbl.TextColor3 = on and C.ivory or C.secondary
         if t._iconImg then t._iconImg.ImageColor3 = on and C.accent or C.muted end
     end
+end
+
+function Window:CreateFloatingToggle(config)
+    config = config or {}
+    local parent = guiParent
+    local old = parent:FindFirstChild("KhfreshFloatingGui")
+    if old then pcall(function() old:Destroy() end) end
+    local sg = make("ScreenGui", {Name="KhfreshFloatingGui", ResetOnSpawn=false, IgnoreGuiInset=true, DisplayOrder=2147483644, ZIndexBehavior=Enum.ZIndexBehavior.Sibling}, parent)
+    local sz = tonumber(config.Size) or 52
+    local btn = make("ImageButton", {Name="ToggleBtn", Size=UDim2.fromOffset(sz,sz), Position=config.Position or UDim2.new(0,14,0.5,-sz/2), BackgroundColor3=C.raised, BackgroundTransparency=0.04, BorderSizePixel=0, AutoButtonColor=false, Image=(config.Logo or ""), ImageColor3=Color3.new(1,1,1), ScaleType=Enum.ScaleType.Fit, ZIndex=5}, sg)
+    corner(btn,16); stroke(btn,C.line,0.22,1)
+    if btn.Image=="" then
+        local txt=label(btn,"K",22,C.ivory,true); txt.TextXAlignment=Enum.TextXAlignment.Center
+    end
+    bindClick(btn,function() self:Toggle() end)
+    self._floatingGui=sg; self._floatingButton=btn
+    return sg
 end
 
 function Window:SelectTab(i)
