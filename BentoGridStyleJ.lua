@@ -18416,31 +18416,8 @@ local function snapshotGeo(obj: GuiObject)
 	return { Size = obj.Size, Position = obj.Position, AnchorPoint = obj.AnchorPoint }
 end
 local function freezeGui(obj: Instance?, _deep: boolean?)
-	if not obj or not obj:IsA("GuiObject") then return end
-	local guiObj = obj :: GuiObject
-	local n = guiObj.Name
-	if n == "FadeHost" or n == "WindowShadow" or n == "PopupLayer" or n == "Notifications" or n == "HoverLayer" then
-		return
-	end
-	FreezeRegistry[guiObj] = snapshotGeo(guiObj)
-	guiObj:GetPropertyChangedSignal("Size"):Connect(function()
-		if FreezeBusy then return end
-		local snap = FreezeRegistry[guiObj]
-		if snap and guiObj.Size ~= snap.Size then
-			FreezeBusy = true
-			guiObj.Size = snap.Size
-			FreezeBusy = false
-		end
-	end)
-	guiObj:GetPropertyChangedSignal("Position"):Connect(function()
-		if FreezeBusy then return end
-		local snap = FreezeRegistry[guiObj]
-		if snap and guiObj.Position ~= snap.Position then
-			FreezeBusy = true
-			guiObj.Position = snap.Position
-			FreezeBusy = false
-		end
-	end)
+	-- DISABLED: Size/Position signal reverse + Heartbeat fight = continuous jump
+	return
 end
 local function unfreezeGui(obj: Instance?)
 	if obj and obj:IsA("GuiObject") then FreezeRegistry[obj] = nil end
@@ -19330,32 +19307,7 @@ function Library.new(options: Options?): any
 	end
 	task.defer(function() self:_updateHandlePositions() end)
 
-	-- Heartbeat geometry guardian: force locked Size/Position every frame if drifted
-	self._freezeConn = game:GetService("RunService").Heartbeat:Connect(function()
-		if self._destroyed or FreezeBusy then return end
-		FreezeBusy = true
-		for obj, snap in pairs(FreezeRegistry) do
-			if obj.Parent then
-				if obj.Size ~= snap.Size then obj.Size = snap.Size end
-				if obj.Position ~= snap.Position then obj.Position = snap.Position end
-				if obj.AnchorPoint ~= snap.AnchorPoint then obj.AnchorPoint = snap.AnchorPoint end
-			else
-				FreezeRegistry[obj] = nil
-			end
-		end
-		FreezeBusy = false
-	end)
-	table.insert(self._connections, self._freezeConn)
-
-	-- Public API: lock any instance forever
-	function self:LockGeometry(obj: GuiObject)
-		freezeGui(obj, true)
-		return self
-	end
-	function self:UnlockGeometry(obj: GuiObject)
-		unfreezeGui(obj)
-		return self
-	end
+	-- (no Heartbeat freeze — fighting layout caused continuous jump)
 
 	return self
 end
@@ -19747,32 +19699,15 @@ function Library:_makeSection(tab: any, options: Options): any
 	}, frame)
 	make("UIListLayout", {Padding = UDim.new(0, 10), SortOrder = Enum.SortOrder.LayoutOrder}, section.Content)
 	table.insert(tab._sections, section)
-	-- One-shot height measure only when children change (no AbsoluteContentSize signal = no jump loop)
+	-- AutomaticSize only — never write Size from AbsoluteContentSize (layout jump source)
+	section.Frame.AutomaticSize = Enum.AutomaticSize.Y
+	section.Content.AutomaticSize = Enum.AutomaticSize.Y
 	section.Content.Size = UDim2.new(1, 0, 0, 0)
-	local function measureOnce()
-		local layout = section.Content:FindFirstChildOfClass("UIListLayout")
-		local contentH = 0
-		if layout then
-			contentH = layout.AbsoluteContentSize.Y
-		else
-			for _, ch in ipairs(section.Content:GetChildren()) do
-				if ch:IsA("GuiObject") and ch.Visible then
-					contentH += ch.AbsoluteSize.Y + 10
-				end
-			end
-		end
-		local top = options.Title and 35 or 0
-		local h = math.max(top + 8, math.ceil(contentH + top + 4))
-		section.Content.Size = UDim2.new(1, 0, 0, math.max(0, h - top))
-		section.Frame.Size = UDim2.new(1, 0, 0, h)
+	if options.Title then
+		section.Frame.Size = UDim2.new(1, 0, 0, 35)
+	else
+		section.Frame.Size = UDim2.new(1, 0, 0, 0)
 	end
-	self:_connect(section.Content.ChildAdded, function()
-		task.defer(measureOnce)
-	end)
-	self:_connect(section.Content.ChildRemoved, function()
-		task.defer(measureOnce)
-	end)
-	task.defer(measureOnce)
 	return section
 end
 
@@ -20578,9 +20513,7 @@ end
 function Library:Destroy()
 	if self._destroyed then return end
 	self._destroyed = true
-	if self._freezeConn then pcall(function() self._freezeConn:Disconnect() end) end
-	table.clear(FreezeRegistry)
-	for _, connection in ipairs(self._connections) do
+		for _, connection in ipairs(self._connections) do
 		if connection.Connected then connection:Disconnect() end
 	end
 	table.clear(self._connections)
@@ -21568,17 +21501,10 @@ local function makeSectionIn(library: any, parent: Instance, tab: any, options: 
 		Size = UDim2.new(1, 0, 1, -top),
 	}, frame)
 	make("UIListLayout", {Padding = UDim.new(0, 10), SortOrder = Enum.SortOrder.LayoutOrder}, section.Content)
+	frame.AutomaticSize = Enum.AutomaticSize.Y
+	section.Content.AutomaticSize = Enum.AutomaticSize.Y
 	section.Content.Size = UDim2.new(1, 0, 0, 0)
-	local function measureOnce()
-		local layout = section.Content:FindFirstChildOfClass("UIListLayout")
-		local contentH = layout and layout.AbsoluteContentSize.Y or 0
-		local h = math.max(top + 8, math.ceil(contentH + top + 4))
-		section.Content.Size = UDim2.new(1, 0, 0, math.max(0, h - top))
-		frame.Size = UDim2.new(1, 0, 0, h)
-	end
-	library:_connect(section.Content.ChildAdded, function() task.defer(measureOnce) end)
-	library:_connect(section.Content.ChildRemoved, function() task.defer(measureOnce) end)
-	task.defer(measureOnce)
+	frame.Size = UDim2.new(1, 0, 0, top)
 	return section
 end
 function Section:AddSection(options: Options): any
