@@ -18331,8 +18331,17 @@ end
 
 local function make<T>(className: string, properties: {[string]: any}, parent: Instance?): T
 	local object = Instance.new(className)
+	-- Never allow Roblox's built-in button hover/press renderer to alter visuals
+	-- as the cursor passes over controls. All interaction feedback is owned by
+	-- the library and the stable build intentionally keeps geometry static.
+	if object:IsA("GuiButton") then
+		object.AutoButtonColor = false
+	end
 	for property, value in pairs(properties) do
-		(object :: any)[property] = value
+		pcall(function() (object :: any)[property] = value end)
+	end
+	if object:IsA("GuiButton") then
+		object.AutoButtonColor = false
 	end
 	object.Parent = parent
 	return object :: any
@@ -20813,20 +20822,7 @@ function Library:StopAnimation(key: string): self
 	return self
 end
 function Library:Pulse(object: GuiObject, property: string?, amount: number?, info: TweenInfo?): Tween?
-	local targetProperty = property or "BackgroundTransparency"
-	local base = (object :: any)[targetProperty]
-	local change = amount or 0.12
-	local peak = base
-	if type(base) == "number" then
-		peak = clamp(base - change, 0, 1)
-	end
-	local tween = self:Animate(object, {[targetProperty] = peak}, info or MOTION.Fast)
-	if tween then
-		self:TrackCleanup(tween.Completed:Connect(function()
-			if object.Parent then self:Animate(object, {[targetProperty] = base}, info or MOTION.Fast) end
-		end))
-	end
-	return tween
+	return nil
 end
 function Library:Shake(object: GuiObject, distance: number?, duration: number?): Tween?
 	-- Intentionally disabled: position animation causes the cursor-hover jump/shake bug.
@@ -21171,56 +21167,9 @@ function Library:Confirm(options: Options): Frame
 	})
 end
 function Library:AddTooltip(object: GuiObject, text: string, options: Options?): RBXScriptConnection?
-	local settings = options or {}
-	local delayTime = settings.Delay or 0.45
-	local current: Frame? = nil
-	local token = 0
-	local function hide()
-		token += 1
-		if current and current.Parent then current:Destroy() end
-		current = nil
-	end
-	local function show()
-		local localToken = token + 1
-		token = localToken
-		task.delay(delayTime, function()
-			if localToken ~= token or not object.Parent then return end
-			local tip = make("TextLabel", {
-				AnchorPoint = Vector2.new(0.5, 1),
-				AutomaticSize = Enum.AutomaticSize.XY,
-				BackgroundColor3 = self.Theme.Surface2,
-				BorderSizePixel = 0,
-				Font = Enum.Font.Gotham,
-				Name = "Tooltip",
-				Position = UDim2.fromOffset(object.AbsolutePosition.X + object.AbsoluteSize.X / 2, object.AbsolutePosition.Y - 6),
-				Text = text,
-				TextSize = settings.TextSize or 11,
-				TextWrapped = settings.TextWrapped == true,
-				ZIndex = 260,
-			}, self.Gui)
-			rounded(tip, 7)
-			stroked(tip, self.Theme.Stroke, 0.25)
-			self:_theme(tip, "BackgroundColor3", "Surface2")
-			self:_theme(tip, "TextColor3", "Text")
-			make("UIPadding", {
-				PaddingBottom = UDim.new(0, 6),
-				PaddingLeft = UDim.new(0, 9),
-				PaddingRight = UDim.new(0, 9),
-				PaddingTop = UDim.new(0, 6),
-			}, tip)
-			current = tip
-		end)
-	end
-	self:_connect(object.MouseEnter, show)
-	self:_connect(object.MouseLeave, hide)
-	self:_connect(object.InputBegan, function(input: InputObject)
-		if input.UserInputType == Enum.UserInputType.Touch then show() end
-	end)
-	self:_connect(object.InputEnded, function(input: InputObject)
-		if input.UserInputType == Enum.UserInputType.Touch then hide() end
-	end)
-	self._tooltips[object] = hide
-	return self._connections[#self._connections]
+	-- Stable build: hover never creates or destroys UI. Tooltips are disabled here
+	-- so cursor entry cannot trigger layout churn on any executor.
+	return nil
 end
 function Library:RemoveTooltip(object: GuiObject): self
 	local hide = self._tooltips[object]
