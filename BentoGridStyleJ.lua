@@ -18501,22 +18501,11 @@ local function setHoverVisible(layer: Frame?, visible: boolean)
 end
 
 local function bindKhfreshHover(hitTarget: GuiObject, layer: Frame?, onEnter: (() -> ())?, onLeave: (() -> ())?)
-	if not hitTarget then return end
-	hitTarget.MouseEnter:Connect(function()
-		if layer then setHoverVisible(layer, true) end
-		if onEnter then onEnter() end
-	end)
-	hitTarget.MouseLeave:Connect(function()
-		if layer then setHoverVisible(layer, false) end
-		if onLeave then onLeave() end
-	end)
+	return
 end
 
 local function attachKhfreshHover(target: GuiObject, color: Color3?, radius: number?)
-	if not target then return nil end
-	local layer = makeHoverLayer(target, color, radius or 12, 0.88)
-	bindKhfreshHover(target, layer)
-	return layer
+	return nil
 end
 
 local function clamp(value: number, minimum: number, maximum: number): number
@@ -18778,34 +18767,7 @@ function Library:_setWindowPosition()
 end
 
 function Library:_updateHandlePositions()
-	-- Place drag bar + resize grip under the window (classic chrome).
-	-- Uses AbsolutePosition of Window once per call; never driven by control hover/layout.
-	if not self.Window or not self.Window.Parent then
-		return
-	end
-	if not self.Window.Visible then
-		return
-	end
-	local pos = self.Window.AbsolutePosition
-	local size = self.Window.AbsoluteSize
-	if self.DragFooter and self.DragFooter.Parent then
-		local fw = self.DragFooter.AbsoluteSize.X
-		if fw < 1 then fw = 230 end
-		self.DragFooter.Position = UDim2.fromOffset(
-			math.floor(pos.X + size.X * 0.5 - fw * 0.5),
-			math.floor(pos.Y + size.Y + 8)
-		)
-	end
-	if self.ResizeGrip and self.ResizeGrip.Parent then
-		local gw = self.ResizeGrip.AbsoluteSize.X
-		local gh = self.ResizeGrip.AbsoluteSize.Y
-		if gw < 1 then gw = 48 end
-		if gh < 1 then gh = 42 end
-		self.ResizeGrip.Position = UDim2.fromOffset(
-			math.floor(pos.X + size.X - gw - 2),
-			math.floor(pos.Y + size.Y + 4)
-		)
-	end
+	-- Handles are parented under Window with relative UDim2 — no AbsolutePosition tracking
 end
 
 local function draggable(library: any, target: GuiObject, handle: GuiObject)
@@ -19151,12 +19113,13 @@ function Library.new(options: Options?): any
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
 		Name = "DragFooter",
-		Position = UDim2.fromOffset(0, 0),
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.new(0.5, 0, 1, 8),
 		Size = UDim2.fromOffset(230, 26),
 		Text = "",
 		TextTransparency = 1,
 		ZIndex = 15,
-	}, gui)
+	}, window)
 	local dragPill = make("Frame", {
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		BackgroundColor3 = Color3.fromRGB(205, 207, 214),
@@ -19178,12 +19141,13 @@ function Library.new(options: Options?): any
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
 		Name = "ResizeGrip",
-		Position = UDim2.fromOffset(0, 0),
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -2, 1, 4),
 		Size = UDim2.fromOffset(48, 42),
 		Text = "",
 		TextTransparency = 1,
 		ZIndex = 16,
-	}, gui)
+	}, window)
 	local gripBarA = make("Frame", {
 		AnchorPoint = Vector2.new(1, 1),
 		BackgroundColor3 = Color3.fromRGB(155, 157, 165),
@@ -19274,14 +19238,7 @@ function Library.new(options: Options?): any
 			end
 		end)
 	end
-	self:_connect(toggle.MouseEnter, function()
-		halo.BackgroundTransparency = 0.67
-		toggle.BackgroundColor3 = self.Theme.Surface3
-	end)
-	self:_connect(toggle.MouseLeave, function()
-		halo.BackgroundTransparency = 0.84
-		toggle.BackgroundColor3 = self.Theme.Surface2
-	end)
+	-- floating toggle hover disabled
 	local camera = workspace.CurrentCamera
 	if camera then
 		self:_connect(camera:GetPropertyChangedSignal("ViewportSize"), function() self:_resize() end)
@@ -20075,14 +20032,7 @@ function Library:AddDropdown(options: Options): Control
 		self:_theme(item, "BackgroundColor3", "Surface3")
 		self:_theme(item, "TextColor3", "Muted")
 		make("UIPadding", {PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8)}, item)
-		self:_connect(item.MouseEnter, function()
-			item.BackgroundColor3 = self.Theme.AccentDark
-			item.TextColor3 = self.Theme.Accent
-		end)
-		self:_connect(item.MouseLeave, function()
-			item.BackgroundColor3 = self.Theme.Surface3
-			item.TextColor3 = self.Theme.Muted
-		end)
+		-- dropdown item hover disabled
 		self:_connect(item.Activated, function()
 			set(candidate, false)
 			setOpen(false)
@@ -21080,10 +21030,6 @@ function Library:Shake(object: GuiObject, distance: number?, duration: number?):
 	return tween
 end
 function Library:Hover(object: GuiObject, enter: Options, leave: Options?): self
-	-- Khfresh hover: overlay HoverLayer only — never Size/Position of object
-	if object then
-		attachKhfreshHover(object, self.Theme and self.Theme.Surface3, 12)
-	end
 	return self
 end
 function Library:Press(object: GuiButton, pressed: Options, released: Options?): self
@@ -21094,11 +21040,6 @@ function Library:IsTouchDevice(): boolean
 	return UserInputService.TouchEnabled and not UserInputService.MouseEnabled
 end
 function Library:EnableTouchFeedback(object: GuiObject): self
-	-- Khfresh: HoverLayer on the object (no geometry change)
-	if self._touchFeedbackEnabled == false then return self end
-	if object then
-		attachKhfreshHover(object, self.Theme and self.Theme.Surface3, 12)
-	end
 	return self
 end
 function Library:GetBreakpoint(width: number?): string
