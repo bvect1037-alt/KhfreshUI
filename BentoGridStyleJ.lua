@@ -18636,16 +18636,33 @@ function Library:_setWindowPosition()
 end
 
 function Library:_updateHandlePositions()
-	-- DragFooter / ResizeGrip are parented to Window with relative UDim2.
-	-- Do not rewrite AbsolutePosition every frame (that caused continuous jump).
+	-- Place drag bar + resize grip under the window (classic chrome).
+	-- Uses AbsolutePosition of Window once per call; never driven by control hover/layout.
 	if not self.Window or not self.Window.Parent then
 		return
 	end
-	if self.DragFooter and self.DragFooter.Parent == self.Window then
-		self.DragFooter.Position = UDim2.new(0.5, 0, 1, 8)
+	if not self.Window.Visible then
+		return
 	end
-	if self.ResizeGrip and self.ResizeGrip.Parent == self.Window then
-		self.ResizeGrip.Position = UDim2.new(1, 2, 1, 4)
+	local pos = self.Window.AbsolutePosition
+	local size = self.Window.AbsoluteSize
+	if self.DragFooter and self.DragFooter.Parent then
+		local fw = self.DragFooter.AbsoluteSize.X
+		if fw < 1 then fw = 230 end
+		self.DragFooter.Position = UDim2.fromOffset(
+			math.floor(pos.X + size.X * 0.5 - fw * 0.5),
+			math.floor(pos.Y + size.Y + 8)
+		)
+	end
+	if self.ResizeGrip and self.ResizeGrip.Parent then
+		local gw = self.ResizeGrip.AbsoluteSize.X
+		local gh = self.ResizeGrip.AbsoluteSize.Y
+		if gw < 1 then gw = 48 end
+		if gh < 1 then gh = 42 end
+		self.ResizeGrip.Position = UDim2.fromOffset(
+			math.floor(pos.X + size.X - gw - 2),
+			math.floor(pos.Y + size.Y + 4)
+		)
 	end
 end
 
@@ -18836,6 +18853,36 @@ function Library.new(options: Options?): any
 	self:_theme(window, "BackgroundColor3", "Background")
 	self.Window = window
 
+	-- Soft drop shadow (sibling under window, no layout interaction with controls)
+	local shadow = make("Frame", {
+		AnchorPoint = window.AnchorPoint,
+		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+		BackgroundTransparency = 0.55,
+		BorderSizePixel = 0,
+		Name = "WindowShadow",
+		Position = UDim2.new(window.Position.X.Scale, window.Position.X.Offset + 6, window.Position.Y.Scale, window.Position.Y.Offset + 10),
+		Size = UDim2.fromOffset(self._targetWidth, self._targetHeight),
+		ZIndex = 9,
+	}, gui)
+	rounded(shadow, 24)
+	self.WindowShadow = shadow
+	self:_connect(window:GetPropertyChangedSignal("Position"), function()
+		if self.WindowShadow then
+			local p = window.Position
+			self.WindowShadow.Position = UDim2.new(p.X.Scale, p.X.Offset + 6, p.Y.Scale, p.Y.Offset + 10)
+		end
+	end)
+	self:_connect(window:GetPropertyChangedSignal("Size"), function()
+		if self.WindowShadow then
+			self.WindowShadow.Size = window.Size
+		end
+	end)
+	self:_connect(window:GetPropertyChangedSignal("Visible"), function()
+		if self.WindowShadow then
+			self.WindowShadow.Visible = window.Visible
+		end
+	end)
+
 	local topbar = make("Frame", {
 		BackgroundTransparency = 1,
 		Name = "Topbar",
@@ -18962,13 +19009,12 @@ function Library.new(options: Options?): any
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
 		Name = "DragFooter",
-		AnchorPoint = Vector2.new(0.5, 0),
-		Position = UDim2.new(0.5, 0, 1, 8),
+		Position = UDim2.fromOffset(0, 0),
 		Size = UDim2.fromOffset(230, 26),
 		Text = "",
 		TextTransparency = 1,
 		ZIndex = 15,
-	}, window)
+	}, gui)
 	local dragPill = make("Frame", {
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		BackgroundColor3 = Color3.fromRGB(205, 207, 214),
@@ -18990,13 +19036,12 @@ function Library.new(options: Options?): any
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
 		Name = "ResizeGrip",
-		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.new(1, 2, 1, 4),
+		Position = UDim2.fromOffset(0, 0),
 		Size = UDim2.fromOffset(48, 42),
 		Text = "",
 		TextTransparency = 1,
 		ZIndex = 16,
-	}, window)
+	}, gui)
 	local gripBarA = make("Frame", {
 		AnchorPoint = Vector2.new(1, 1),
 		BackgroundColor3 = Color3.fromRGB(155, 157, 165),
@@ -19029,6 +19074,7 @@ function Library.new(options: Options?): any
 	self:_theme(gripBarC, "BackgroundColor3", "Muted")
 	resizable(self, window, resizeGrip)
 	self.ResizeGrip = resizeGrip
+	task.defer(function() self:_updateHandlePositions() end)
 
 	local notifications = make("Frame", {
 		AnchorPoint = Vector2.new(1, 0),
@@ -19046,7 +19092,7 @@ function Library.new(options: Options?): any
 	}, notifications)
 	self.Notifications = notifications
 
-	self:_connect(toggle.Activated, function() self:SetVisible(not self._visible) end)
+	self:_connect(toggle.Activated, function() self:Toggle() end)
 	self:_connect(toggle.MouseEnter, function()
 		halo.BackgroundTransparency = 0.67
 		toggle.BackgroundColor3 = self.Theme.Surface3
@@ -19067,14 +19113,65 @@ function Library.new(options: Options?): any
 end
 
 function Library:SetVisible(visible: boolean)
-	if self._destroyed then return end
-	self._visible = visible
-	-- Visibility is intentionally instantaneous. Resizing the whole window on
-	-- every toggle click makes controls appear to jump and is uncomfortable on touch.
-	self.Window.Visible = visible
-	if visible then
-		self.Window.Size = UDim2.fromOffset(self._currentWidth, self._currentHeight)
+	if self._destroyed then return self end
+	if self._visible == visible and not self._forceVisibleAnim then
+		return self
 	end
+	self._visible = visible == true
+	local window = self.Window
+	if not window then return self end
+
+	-- Soft open/close: scale + transparency (no Size tween — Size changes cause control jump)
+	local scale = window:FindFirstChild("WindowMotionScale")
+	if not scale then
+		scale = Instance.new("UIScale")
+		scale.Name = "WindowMotionScale"
+		scale.Scale = 1
+		scale.Parent = window
+	end
+
+	local fadeInfo = TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+	local handles = { self.DragFooter, self.ResizeGrip }
+
+	if self._visible then
+		window.Visible = true
+		window.Size = UDim2.fromOffset(self._currentWidth or self._targetWidth, self._currentHeight or self._targetHeight)
+		scale.Scale = 0.94
+		window.BackgroundTransparency = math.min(window.BackgroundTransparency + 0.15, 0.35)
+		for _, h in ipairs(handles) do
+			if h then h.Visible = true end
+		end
+		pcall(function()
+			TweenService:Create(scale, fadeInfo, { Scale = 1 }):Play()
+			TweenService:Create(window, fadeInfo, { BackgroundTransparency = 0 }):Play()
+		end)
+		self:_updateHandlePositions()
+	else
+		pcall(function()
+			local t1 = TweenService:Create(scale, fadeInfo, { Scale = 0.96 })
+			local t2 = TweenService:Create(window, fadeInfo, { BackgroundTransparency = 0.2 })
+			t1:Play()
+			t2:Play()
+			task.delay(0.2, function()
+				if self._destroyed or self._visible then return end
+				window.Visible = false
+				window.BackgroundTransparency = 0
+				scale.Scale = 1
+				for _, h in ipairs(handles) do
+					if h then h.Visible = false end
+				end
+			end)
+		end)
+	end
+	return self
+end
+
+function Library:Toggle(): self
+	return self:SetVisible(not self._visible)
+end
+
+function Library:IsVisible(): boolean
+	return self._visible == true
 end
 
 function Library:SetTheme(theme: Options)
@@ -20727,30 +20824,36 @@ function Library:Shake(object: GuiObject, distance: number?, duration: number?):
 	return tween
 end
 function Library:Hover(object: GuiObject, enter: Options, leave: Options?): self
-	local exitStyle = leave or {}
-	local enterProps = visualFeedback(enter)
-	local leaveProps = visualFeedback(exitStyle)
+	-- Instant property set only (no TweenService). Prevents continuous jump/jitter on hover.
+	local enterProps = visualFeedback(enter or {})
+	local leaveProps = visualFeedback(leave or {})
 	self:_connect(object.MouseEnter, function()
 		if not object.Parent then return end
-		-- only color/transparency — never geometry
-		self:Animate(object, enterProps, MOTION.Fast)
+		for prop, value in pairs(enterProps) do
+			pcall(function() (object :: any)[prop] = value end)
+		end
 	end)
 	self:_connect(object.MouseLeave, function()
 		if not object.Parent then return end
-		self:Animate(object, leaveProps, MOTION.Smooth)
+		for prop, value in pairs(leaveProps) do
+			pcall(function() (object :: any)[prop] = value end)
+		end
 	end)
 	return self
 end
 function Library:Press(object: GuiButton, pressed: Options, released: Options?): self
-	local releaseStyle = released or {}
+	local pressProps = visualFeedback(pressed or {})
+	local releaseProps = visualFeedback(released or {})
 	self:_connect(object.InputBegan, function(input: InputObject)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			self:Animate(object, visualFeedback(pressed), MOTION.Fast)
+		if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
+		for prop, value in pairs(pressProps) do
+			pcall(function() (object :: any)[prop] = value end)
 		end
 	end)
 	self:_connect(object.InputEnded, function(input: InputObject)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			self:Animate(object, visualFeedback(releaseStyle), MOTION.Fast)
+		if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
+		for prop, value in pairs(releaseProps) do
+			pcall(function() (object :: any)[prop] = value end)
 		end
 	end)
 	return self
@@ -20759,15 +20862,9 @@ function Library:IsTouchDevice(): boolean
 	return UserInputService.TouchEnabled and not UserInputService.MouseEnabled
 end
 function Library:EnableTouchFeedback(object: GuiObject): self
-	-- Color-only feedback (never Size/Position) to prevent hover layout jumps
+	-- Disabled geometry / transparency feedback on full-bleed buttons.
+	-- Changing BackgroundTransparency on transparent overlays causes enter/leave spam + visual jump.
 	if self._touchFeedbackEnabled == false then return self end
-	if not object or not object:IsA("GuiObject") then return self end
-	if self._inputMode ~= "Touch" then
-		self:Hover(object, {BackgroundTransparency = 0.06}, {BackgroundTransparency = 0})
-	end
-	if object:IsA("GuiButton") then
-		self:Press(object, {BackgroundTransparency = 0.14}, {BackgroundTransparency = 0})
-	end
 	return self
 end
 function Library:GetBreakpoint(width: number?): string
