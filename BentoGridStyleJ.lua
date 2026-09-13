@@ -18467,6 +18467,8 @@ local function makeHoverLayer(parent: GuiObject, color: Color3?, radius: number?
 	layer.Visible = false
 	layer.Active = false
 	layer.Selectable = false
+	layer.ClipsDescendants = true
+	-- not a layout sibling of section UIListLayout; inside card only
 	layer.ZIndex = (parent.ZIndex or 1) + 1
 	layer.Parent = parent
 	local corner = Instance.new("UICorner")
@@ -19452,20 +19454,23 @@ function Library:AddTab(options: Options): any
 		CanvasSize = UDim2.fromOffset(0, 0),
 		ClipsDescendants = true,
 		ScrollBarImageColor3 = self.Theme.Stroke,
-		ScrollBarThickness = 4,
+		ScrollBarThickness = 6,
 		ScrollingDirection = Enum.ScrollingDirection.Y,
 		Size = UDim2.new(1, -36, 1, -16),
 		Position = UDim2.fromOffset(16, 8),
 		Visible = false,
 	}, self._contentHost)
+	-- CRITICAL: Always reserve scrollbar space — prevents width oscillate → ALL controls jump
 	pcall(function()
 		page.ElasticBehavior = Enum.ElasticBehavior.Never
+		page.VerticalScrollBarInset = Enum.ScrollBarInset.Always
+		page.ScrollingEnabled = true
 	end)
 	page.Name = "Page_" .. tab.Name
 	make("UIPadding", {
 		PaddingBottom = UDim.new(0, 14),
 		PaddingTop = UDim.new(0, 4),
-		PaddingRight = UDim.new(0, 10),
+		PaddingRight = UDim.new(0, 4),
 		PaddingLeft = UDim.new(0, 2),
 	}, page)
 	local pageLayout = make("UIListLayout", {
@@ -19473,10 +19478,16 @@ function Library:AddTab(options: Options): any
 		SortOrder = Enum.SortOrder.LayoutOrder,
 	}, page)
 	-- Manual canvas size (no AutomaticCanvasSize jitter while hovering controls)
+	local lastCanvasY = 0
 	local function refreshCanvas()
 		task.defer(function()
 			if not page.Parent then return end
-			local y = pageLayout.AbsoluteContentSize.Y + 24
+			local y = math.ceil(pageLayout.AbsoluteContentSize.Y + 28)
+			-- Never shrink canvas on micro reflow (stops scrollbar flash loop)
+			if y < lastCanvasY and (lastCanvasY - y) < 40 then
+				y = lastCanvasY
+			end
+			lastCanvasY = y
 			page.CanvasSize = UDim2.fromOffset(0, math.max(y, 0))
 		end)
 	end
@@ -19492,17 +19503,7 @@ function Library:AddTab(options: Options): any
 		bindKhfreshHover(button, tabHover, nil, nil)
 	end
 	self._tabsBar.Visible = #self._tabs > 0
-	self._contentTop = 78
-	local left = self._contentLeft or 198
-	self._contentHost.Position = UDim2.fromOffset(left, self._contentTop)
-	self._contentHost.Size = UDim2.new(1, -(left + 16), 1, -92)
-	if self._sideDivider then
-		self._sideDivider.Position = UDim2.fromOffset(left - 8, self._contentTop)
-		self._sideDivider.Size = UDim2.new(0, 1, 1, -92)
-	end
-	if self._tabsBar then
-		self._tabsBar.Size = UDim2.new(0, self._railWidth or 168, 1, -92)
-	end
+	-- Do NOT resize contentHost on every AddTab (global reflow jumps every control)
 	if options.Hidden ~= true or #self._tabs == 1 then
 		self:SelectTab(tab)
 	end
@@ -19699,15 +19700,34 @@ function Library:_makeSection(tab: any, options: Options): any
 	}, frame)
 	make("UIListLayout", {Padding = UDim.new(0, 10), SortOrder = Enum.SortOrder.LayoutOrder}, section.Content)
 	table.insert(tab._sections, section)
-	-- AutomaticSize only — never write Size from AbsoluteContentSize (layout jump source)
-	section.Frame.AutomaticSize = Enum.AutomaticSize.Y
-	section.Content.AutomaticSize = Enum.AutomaticSize.Y
+	-- Fixed growth: set height once when children added; NEVER listen AbsoluteContentSize
 	section.Content.Size = UDim2.new(1, 0, 0, 0)
-	if options.Title then
-		section.Frame.Size = UDim2.new(1, 0, 0, 35)
-	else
-		section.Frame.Size = UDim2.new(1, 0, 0, 0)
+	local topPad = options.Title and 35 or 0
+	section.Frame.Size = UDim2.new(1, 0, 0, topPad)
+	local function bumpHeight()
+		task.defer(function()
+			if not section.Frame.Parent then return end
+			local h = topPad
+			for _, ch in ipairs(section.Content:GetChildren()) do
+				if ch:IsA("GuiObject") and ch.Visible and not ch:IsA("UIListLayout") and not ch:IsA("UIPadding") then
+					h += (ch.Size.Y.Offset > 0 and ch.Size.Y.Offset or 76) + 10
+				end
+			end
+			section.Content.Size = UDim2.new(1, 0, 0, math.max(0, h - topPad))
+			section.Frame.Size = UDim2.new(1, 0, 0, math.max(topPad + 8, h))
+			-- Refresh page canvas once
+			local page = section.Frame.Parent
+			if page and page:IsA("ScrollingFrame") then
+				local lay = page:FindFirstChildOfClass("UIListLayout")
+				if lay then
+					page.CanvasSize = UDim2.fromOffset(0, lay.AbsoluteContentSize.Y + 24)
+				end
+			end
+		end)
 	end
+	self:_connect(section.Content.ChildAdded, bumpHeight)
+	self:_connect(section.Content.ChildRemoved, bumpHeight)
+	task.defer(bumpHeight)
 	return section
 end
 
