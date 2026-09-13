@@ -19006,12 +19006,12 @@ function Library.new(options: Options?): any
 
 	self:_connect(toggle.Activated, function() self:SetVisible(not self._visible) end)
 	self:_connect(toggle.MouseEnter, function()
-		play(halo, {BackgroundTransparency = 0.67}, MOTION.Fast)
-		play(toggle, {BackgroundColor3 = self.Theme.Surface3}, MOTION.Fast)
+		halo.BackgroundTransparency = 0.67
+		toggle.BackgroundColor3 = self.Theme.Surface3
 	end)
 	self:_connect(toggle.MouseLeave, function()
-		play(halo, {BackgroundTransparency = 0.84}, MOTION.Smooth)
-		play(toggle, {BackgroundColor3 = self.Theme.Surface2}, MOTION.Smooth)
+		halo.BackgroundTransparency = 0.84
+		toggle.BackgroundColor3 = self.Theme.Surface2
 	end)
 	local camera = workspace.CurrentCamera
 	if camera then
@@ -19090,6 +19090,7 @@ function Library:AddTab(options: Options): any
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
 		CanvasSize = UDim2.fromOffset(0, 0),
+		ClipsDescendants = false,
 		ScrollBarImageColor3 = self.Theme.Stroke,
 		ScrollBarThickness = 3,
 		Size = UDim2.new(1, -32, 1, -16),
@@ -19110,10 +19111,10 @@ function Library:AddTab(options: Options): any
 	table.insert(self._tabs, tab)
 	self:_connect(button.Activated, function() self:SelectTab(tab) end)
 	self:_connect(button.MouseEnter, function()
-		if not tab._selected then play(button, {BackgroundColor3 = self.Theme.Surface3}, MOTION.Fast) end
+		if not tab._selected then button.BackgroundColor3 = self.Theme.Surface3 end
 	end)
 	self:_connect(button.MouseLeave, function()
-		if not tab._selected then play(button, {BackgroundColor3 = self.Theme.Surface2}, MOTION.Smooth) end
+		if not tab._selected then button.BackgroundColor3 = self.Theme.Surface2 end
 	end)
 	self._tabsBar.Visible = #self._tabs > 0
 	self._contentTop = 78
@@ -19161,7 +19162,7 @@ function Library:_card(options: Options, height: number?): Frame
 	local card = make("Frame", {
 		BackgroundColor3 = options.BackgroundColor or self.Theme.Surface,
 		BorderSizePixel = 0,
-		ClipsDescendants = true,
+		ClipsDescendants = false,
 		LayoutOrder = options.LayoutOrder or 1,
 		Size = UDim2.new(1, 0, 0, height or options.Height or 76),
 	}, tab.Page)
@@ -19408,8 +19409,8 @@ function Library:AddToggle(options: Options): Control
 		if not silent then invoke(options.Callback, value) end
 	end
 	self:_connect(button.Activated, function() set(not value, false) end)
-	self:_connect(button.MouseEnter, function() play(card, {BackgroundColor3 = self.Theme.Surface2}, MOTION.Fast) end)
-	self:_connect(button.MouseLeave, function() play(card, {BackgroundColor3 = self.Theme.Surface}, MOTION.Smooth) end)
+	self:_connect(button.MouseEnter, function() card.BackgroundColor3 = self.Theme.Surface2 end)
+	self:_connect(button.MouseLeave, function() card.BackgroundColor3 = self.Theme.Surface end)
 	render()
 	return controlObject(self, card, options.ConfigKey or options.Name, set, function() return value end)
 end
@@ -19442,8 +19443,8 @@ function Library:AddButton(options: Options): Frame
 	end
 	local button = make("TextButton", {AutoButtonColor = false, BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Text = ""}, card)
 	self:_connect(button.Activated, function() invoke(options.Callback) end)
-	self:_connect(button.MouseEnter, function() play(card, {BackgroundColor3 = self.Theme.Surface2}, MOTION.Fast) end)
-	self:_connect(button.MouseLeave, function() play(card, {BackgroundColor3 = options.BackgroundColor or self.Theme.Surface}, MOTION.Smooth) end)
+	self:_connect(button.MouseEnter, function() card.BackgroundColor3 = self.Theme.Surface2 end)
+	self:_connect(button.MouseLeave, function() card.BackgroundColor3 = options.BackgroundColor or self.Theme.Surface end)
 	-- Keep card geometry fixed on click; only color feedback is animated.
 	return card
 end
@@ -19528,13 +19529,13 @@ end
 
 function Library:AddDropdown(options: Options): Control
 	local values = optionList(options)
-	local card = self:_card(options, 78)
+	local card = self:_card(options, 96)
 	self:_heading(card, options, 10, false)
 	local button = make("TextButton", {
 		AutoButtonColor = false,
 		BackgroundColor3 = self.Theme.Surface3,
 		BorderSizePixel = 0,
-		Position = UDim2.fromOffset(16, 40),
+		Position = UDim2.fromOffset(16, 42),
 		Size = UDim2.new(1, -32, 28, 0),
 		Text = "",
 	}, card)
@@ -19544,7 +19545,7 @@ function Library:AddDropdown(options: Options): Control
 	self:_theme(selectedLabel, "TextColor3", "Text")
 	local arrow = self:_addIcon(button, "ChevronDown", 16)
 	arrow.Position = UDim2.new(1, -25, 0, 6)
-	local menu = make("Frame", {BackgroundColor3 = self.Theme.Surface2, BorderSizePixel = 0, Position = UDim2.fromOffset(16, 72), Size = UDim2.new(1, -32, 0, #values * 36 + 12), Visible = false, ZIndex = 20}, card)
+	local menu = make("Frame", {BackgroundColor3 = self.Theme.Surface2, BorderSizePixel = 0, Position = UDim2.fromOffset(16, 74), Size = UDim2.new(1, -32, 0, #values * 36 + 12), Visible = false, ZIndex = 100}, card)
 	rounded(menu, 8)
 	stroked(menu, self.Theme.Stroke, 0.35)
 	self:_theme(menu, "BackgroundColor3", "Surface2")
@@ -19571,6 +19572,9 @@ function Library:AddDropdown(options: Options): Control
 	local function setOpen(newOpen: boolean)
 		open = newOpen
 		menu.Visible = open
+		card.ZIndex = open and 100 or 1
+		button.ZIndex = open and 101 or 1
+		arrow.ZIndex = open and 102 or 1
 		if open then
 			arrow.Rotation = 180
 		else
@@ -19595,8 +19599,8 @@ function Library:AddDropdown(options: Options): Control
 		make("UIPadding", {PaddingLeft = UDim.new(0, 10)}, item)
 		self:_theme(item, "TextColor3", "Muted")
 		self:_connect(item.Activated, function() set(candidate, false); setOpen(false) end)
-		self:_connect(item.MouseEnter, function() play(item, {BackgroundColor3 = self.Theme.Surface3}, MOTION.Fast) end)
-		self:_connect(item.MouseLeave, function() play(item, {BackgroundColor3 = self.Theme.Surface2}, MOTION.Fast) end)
+		self:_connect(item.MouseEnter, function() item.BackgroundColor3 = self.Theme.Surface3 end)
+		self:_connect(item.MouseLeave, function() item.BackgroundColor3 = self.Theme.Surface2 end)
 	end
 	self:_connect(button.Activated, function() setOpen(not open) end)
 	display()
@@ -19605,17 +19609,18 @@ end
 
 function Library:AddMultiDropdown(options: Options): Control
 	local values = optionList(options)
-	local card = self:_card(options, 78)
+	local card = self:_card(options, 96)
 	self:_heading(card, options, 10, false)
-	local button = make("TextButton", {AutoButtonColor = false, BackgroundColor3 = self.Theme.Surface3, BorderSizePixel = 0, Position = UDim2.fromOffset(16, 40), Size = UDim2.new(1, -32, 28, 0), Text = ""}, card)
+	local button = make("TextButton", {AutoButtonColor = false, BackgroundColor3 = self.Theme.Surface3, BorderSizePixel = 0, Position = UDim2.fromOffset(16, 42), Size = UDim2.new(1, -32, 28, 0), Text = ""}, card)
 	rounded(button, 8)
 	self:_theme(button, "BackgroundColor3", "Surface3")
 	local label = make("TextLabel", {BackgroundTransparency = 1, Font = Enum.Font.Gotham, Position = UDim2.fromOffset(10, 0), Size = UDim2.new(1, -36, 1, 0), TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left}, button)
 	self:_theme(label, "TextColor3", "Text")
 	local arrow = self:_addIcon(button, "ChevronDown", 16)
 	arrow.Position = UDim2.new(1, -25, 0, 6)
-	local menu = make("Frame", {BackgroundColor3 = self.Theme.Surface2, BorderSizePixel = 0, Position = UDim2.fromOffset(16, 72), Size = UDim2.new(1, -32, 0, #values * 36 + 12), Visible = false, ZIndex = 20}, card)
+	local menu = make("Frame", {BackgroundColor3 = self.Theme.Surface2, BorderSizePixel = 0, Position = UDim2.fromOffset(16, 74), Size = UDim2.new(1, -32, 0, #values * 36 + 12), Visible = false, ZIndex = 100}, card)
 	rounded(menu, 8)
+	stroked(menu, self.Theme.Stroke, 0.35)
 	self:_theme(menu, "BackgroundColor3", "Surface2")
 	local selected: {[any]: boolean} = {}
 	for _, item in ipairs(options.Default or {}) do selected[item] = true end
@@ -19672,6 +19677,9 @@ function Library:AddMultiDropdown(options: Options): Control
 	self:_connect(button.Activated, function()
 		open = not open
 		menu.Visible = open
+		card.ZIndex = open and 100 or 1
+		button.ZIndex = open and 101 or 1
+		arrow.ZIndex = open and 102 or 1
 		if open then
 			arrow.Rotation = 180
 		else
