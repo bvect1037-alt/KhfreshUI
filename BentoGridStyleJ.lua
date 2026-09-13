@@ -14,7 +14,6 @@
 		ReplicatedStorage, filesystem API, or a second HTTP request.
 ]]
 
-local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
@@ -18336,6 +18335,7 @@ local function make<T>(className: string, properties: {[string]: any}, parent: I
 	-- the library and the stable build intentionally keeps geometry static.
 	if object:IsA("GuiButton") then
 		object.AutoButtonColor = false
+		pcall(function() object.Selectable = false end)
 	end
 	for property, value in pairs(properties) do
 		pcall(function() (object :: any)[property] = value end)
@@ -18362,10 +18362,10 @@ end
 
 --[[
 	Animation policy (anti-jump):
-	- Hover / Press / tab highlight → INSTANT color only (no tween)
-	- Open/close UI → CanvasGroup.GroupTransparency only
-	- play() → color/transparency ONLY (never Size/Position)
-	- playGeo() → internal progress bars only; hover/focus never changes geometry
+	- Hover / Press / tab highlight -> no geometry mutation
+	- Open/close UI -> direct visibility state
+	- play() -> visual properties only (never Size/Position)
+	- playGeo() -> visual properties only; layout geometry is assigned explicitly
 ]]
 local GEOMETRY_PROPS = {
 	Size = true, Position = true, AnchorPoint = true, Rotation = true,
@@ -18396,9 +18396,13 @@ local function play(object: Instance, properties: {[string]: any}, _info: TweenI
 end
 
 local function playGeo(object: Instance, properties: {[string]: any}, _info: TweenInfo?): Tween?
+	-- Geometry mutation is intentionally disabled for interaction safety.
+	-- Internal layout code writes geometry directly where needed.
 	if type(properties) ~= "table" or not object then return nil end
 	for property, value in pairs(properties) do
-		pcall(function() (object :: any)[property] = value end)
+		if not GEOMETRY_PROPS[property] then
+			pcall(function() (object :: any)[property] = value end)
+		end
 	end
 	return nil
 end
@@ -18717,25 +18721,28 @@ local function draggable(library: any, target: GuiObject, handle: GuiObject)
 		dragging = true
 		startInput = input.Position
 		startPosition = target.Position
-		library:_connect(input.Changed, function()
-			if input.UserInputState == Enum.UserInputState.End then
-				dragging = false
-			end
-		end)
+	end)
+	library:_connect(UserInputService.InputEnded, function(input: InputObject)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = false
+			startInput = nil
+			startPosition = nil
+		end
 	end)
 	library:_connect(UserInputService.InputChanged, function(input: InputObject)
-		if not dragging or not startInput or not startPosition then
-			return
-		end
+		if not dragging or not startInput or not startPosition or library._destroyed then return end
 		if input.UserInputType ~= Enum.UserInputType.MouseMovement and input.UserInputType ~= Enum.UserInputType.Touch then
 			return
 		end
 		local delta = input.Position - startInput
-		target.Position = UDim2.new(
-			startPosition.X.Scale, startPosition.X.Offset + delta.X,
-			startPosition.Y.Scale, startPosition.Y.Offset + delta.Y
-		)
-		library:_setWindowPosition()
+		local viewport = library:GetViewport()
+		local size = target.AbsoluteSize
+		local x = startPosition.X.Offset + delta.X
+		local y = startPosition.Y.Offset + delta.Y
+		local margin = 8
+		x = clamp(x, margin - viewport.X, viewport.X - size.X - margin)
+		y = clamp(y, margin - viewport.Y, viewport.Y - size.Y - margin)
+		target.Position = UDim2.new(startPosition.X.Scale, x, startPosition.Y.Scale, y)
 		library:_updateHandlePositions()
 	end)
 end
@@ -18746,32 +18753,31 @@ local function resizable(library: any, target: GuiObject, handle: GuiObject)
 	local startWidth = 0
 	local startHeight = 0
 	library:_connect(handle.InputBegan, function(input: InputObject)
-		if input.UserInputType ~= Enum.UserInputType.MouseButton1
-			and input.UserInputType ~= Enum.UserInputType.Touch then
+		if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then
 			return
 		end
 		resizing = true
 		startInput = input.Position
 		startWidth = target.AbsoluteSize.X
 		startHeight = target.AbsoluteSize.Y
-		library:_connect(input.Changed, function()
-			if input.UserInputState == Enum.UserInputState.End then
-				resizing = false
-				startInput = nil
-			end
-		end)
+	end)
+	library:_connect(UserInputService.InputEnded, function(input: InputObject)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			resizing = false
+			startInput = nil
+		end
 	end)
 	library:_connect(UserInputService.InputChanged, function(input: InputObject)
-		if not resizing or not startInput then
-			return
-		end
-		if input.UserInputType ~= Enum.UserInputType.MouseMovement
-			and input.UserInputType ~= Enum.UserInputType.Touch then
+		if not resizing or not startInput or library._destroyed then return end
+		if input.UserInputType ~= Enum.UserInputType.MouseMovement and input.UserInputType ~= Enum.UserInputType.Touch then
 			return
 		end
 		local delta = input.Position - startInput
-		library._targetWidth = clamp(startWidth + delta.X, 560, 1200)
-		library._targetHeight = clamp(startHeight + delta.Y, 400, 900)
+		local viewport = library:GetViewport()
+		local maxW = math.max(320, viewport.X - 28)
+		local maxH = math.max(280, viewport.Y - 74)
+		library._targetWidth = clamp(startWidth + delta.X, 320, math.min(1200, maxW))
+		library._targetHeight = clamp(startHeight + delta.Y, 280, math.min(900, maxH))
 		library:_resize()
 		library:_updateHandlePositions()
 	end)
@@ -18872,6 +18878,7 @@ function Library.new(options: Options?): any
 		Size = UDim2.fromOffset(56, 56),
 		Text = "",
 		ZIndex = 30,
+		Selectable = false,
 	}, gui)
 	rounded(toggle, 18)
 	stroked(toggle, self.Theme.Stroke, 0.05)
@@ -19170,6 +19177,8 @@ function Library.new(options: Options?): any
 	self._currentWidth = clamp(self._targetWidth, 320, math.max(320, viewport.X - 28))
 	self._currentHeight = clamp(self._targetHeight, 280, math.max(280, viewport.Y - 74))
 	self.Window.Size = UDim2.fromOffset(self._currentWidth, self._currentHeight)
+	-- Activate the responsive watcher once, so the same library behaves consistently on PC and mobile.
+	pcall(function() self:WatchViewport() end)
 	return self
 end
 
@@ -19224,6 +19233,7 @@ function Library:AddTab(options: Options): any
 		Size = UDim2.new(1, -4, 0, 40),
 		Text = "",
 		TextTransparency = 1,
+		Selectable = false,
 	}, self._tabsBar)
 	rounded(button, 12)
 	tab.Button = button
@@ -20792,7 +20802,8 @@ function Library:_motionInfo(info: TweenInfo?): TweenInfo
 	)
 end
 function Library:Animate(object: Instance, properties: Options, _info: TweenInfo?, key: string?): Tween?
-	-- Legacy API kept as a synchronous setter. Nothing animates geometry or hover state.
+	-- FINAL STABLE POLICY: visual-only synchronous assignment.
+	-- Size, Position, Rotation, AnchorPoint, TextSize and layout properties are ignored.
 	if self._destroyed or not object or not object.Parent then return nil end
 	play(object, properties)
 	if key then self._animations[key] = nil end
@@ -20803,15 +20814,19 @@ function Library:StopAnimation(key: string): self
 	return self
 end
 function Library:Pulse(_object: GuiObject, _property: string?, _amount: number?, _info: TweenInfo?): Tween?
+	-- Disabled intentionally: pulse/scale animation caused hover jitter in executor UI.
 	return nil
 end
 function Library:Shake(_object: GuiObject, _distance: number?, _duration: number?): Tween?
+	-- Disabled intentionally: never move a control because of focus/hover.
 	return nil
 end
 function Library:Hover(_object: GuiObject, _enter: Options, _leave: Options?): self
+	-- Hover is a no-op. No Size/Position/Color mutation is performed here.
 	return self
 end
 function Library:Press(_object: GuiButton, _pressed: Options, _released: Options?): self
+	-- Press is a no-op. Roblox AutoButtonColor/selection are already disabled in make().
 	return self
 end
 function Library:IsTouchDevice(): boolean
@@ -21460,11 +21475,8 @@ function Library:AddProgress(options: Options): Control
 	local function render(animated: boolean?)
 		local ratio = (value - minimum) / math.max(maximum - minimum, 0.0001)
 		valueLabel.Text = options.Format and string.format(options.Format, value) or string.format("%d%%", math.round(ratio * 100))
-		if animated then
-			self:Animate(fill, {Size = UDim2.fromScale(ratio, 1)}, MOTION.Smooth, "geo_fill")
-		else
-			fill.Size = UDim2.fromScale(ratio, 1)
-		end
+		-- Geometry is always assigned directly. Animation APIs never change Size/Position.
+		fill.Size = UDim2.fromScale(ratio, 1)
 	end
 	local function set(newValue: any, silent: boolean?)
 		value = clamp(tonumber(newValue) or minimum, minimum, maximum)
@@ -21754,8 +21766,7 @@ function Library:AddLink(options: Options): TextButton
 	}, options.Parent or self:_active().Page)
 	self:_theme(link, "TextColor3", "Accent")
 	self:_connect(link.Activated, function() invoke(options.Callback, link) end)
-	self:Hover(link, {TextTransparency = 0.2}, {TextTransparency = 0})
-	self:SetAccessibleText(link, {Role = "link", Label = options.AccessibilityLabel or link.Text})
+		self:SetAccessibleText(link, {Role = "link", Label = options.AccessibilityLabel or link.Text})
 	return link
 end
 function Library:AddStatCard(options: Options): Frame
