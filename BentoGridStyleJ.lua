@@ -18679,6 +18679,29 @@ function Library:_setWindowPosition()
 end
 
 function Library:_updateHandlePositions()
+	if not self.Window or not self.Window.Parent then
+		return
+	end
+	local pos = self.Window.AbsolutePosition
+	local size = self.Window.AbsoluteSize
+	if self.DragFooter and self.DragFooter.Parent then
+		local fw = self.DragFooter.AbsoluteSize.X
+		if fw < 1 then fw = 230 end
+		self.DragFooter.Position = UDim2.fromOffset(
+			math.floor(pos.X + size.X * 0.5 - fw * 0.5),
+			math.floor(pos.Y + size.Y + 8)
+		)
+	end
+	if self.ResizeGrip and self.ResizeGrip.Parent then
+		local gw = self.ResizeGrip.AbsoluteSize.X
+		local gh = self.ResizeGrip.AbsoluteSize.Y
+		if gw < 1 then gw = 48 end
+		if gh < 1 then gh = 42 end
+		self.ResizeGrip.Position = UDim2.fromOffset(
+			math.floor(pos.X + size.X - gw - 2),
+			math.floor(pos.Y + size.Y + 4)
+		)
+	end
 end
 
 local function draggable(library: any, target: GuiObject, handle: GuiObject)
@@ -19024,13 +19047,12 @@ function Library.new(options: Options?): any
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
 		Name = "DragFooter",
-		AnchorPoint = Vector2.new(0.5, 0),
-		Position = UDim2.new(0.5, 0, 1, 8),
+		Position = UDim2.fromOffset(0, 0),
 		Size = UDim2.fromOffset(230, 26),
 		Text = "",
 		TextTransparency = 1,
 		ZIndex = 15,
-	}, window)
+	}, gui)
 	local dragPill = make("Frame", {
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		BackgroundColor3 = Color3.fromRGB(205, 207, 214),
@@ -19052,13 +19074,12 @@ function Library.new(options: Options?): any
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
 		Name = "ResizeGrip",
-		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.new(1, -2, 1, 4),
+		Position = UDim2.fromOffset(0, 0),
 		Size = UDim2.fromOffset(48, 42),
 		Text = "",
 		TextTransparency = 1,
 		ZIndex = 16,
-	}, window)
+	}, gui)
 	local gripBarA = make("Frame", {
 		AnchorPoint = Vector2.new(1, 1),
 		BackgroundColor3 = Color3.fromRGB(155, 157, 165),
