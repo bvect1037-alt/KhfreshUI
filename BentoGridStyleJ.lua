@@ -1,12 +1,17 @@
---!strict
 --[[
-	BentoLucide
-	A dependency-free, LocalScript-safe Roblox UI library.
+	BentoLucide Executor UI Library
 
-	The module intentionally uses ordinary Roblox services only. It does not use
-	executor APIs, loadstring, filesystem APIs, or HTTP. Config import/export is
-	JSON text returned by HttpService and is therefore safe to persist wherever
-	the host game chooses to persist it.
+	This file is the UI payload for Roblox script executors. Load it with an
+	executor loader using game:HttpGet and loadstring, for example:
+
+		local source = game:HttpGet(LIBRARY_URL)
+		local chunk = assert(loadstring(source))
+		local Library = chunk()
+
+	The payload does not fetch itself or execute loadstring recursively. The
+	executor performs the initial download and compilation; this file then uses
+		Roblox services to create the UI. It does not require a ModuleScript,
+		ReplicatedStorage, filesystem API, or a second HTTP request.
 ]]
 
 local TweenService = game:GetService("TweenService")
@@ -18824,7 +18829,7 @@ function Library.new(options: Options?): any
 		AnchorPoint = Vector2.new(1, 0),
 		BackgroundColor3 = self.Theme.Background,
 		BorderSizePixel = 0,
-		ClipsDescendants = false,
+		ClipsDescendants = true,
 		Name = "Window",
 		Position = UDim2.new(1, -22, 0, 22),
 		Size = UDim2.fromOffset(self._targetWidth, self._targetHeight),
@@ -18863,6 +18868,15 @@ function Library.new(options: Options?): any
 		TextXAlignment = Enum.TextXAlignment.Left,
 	}, topbar)
 	self:_theme(subtitle, "TextColor3", "Muted")
+	local headerDivider = make("Frame", {
+		BackgroundColor3 = self.Theme.Stroke,
+		BackgroundTransparency = 0.72,
+		BorderSizePixel = 0,
+		Position = UDim2.fromOffset(16, 67),
+		Size = UDim2.new(1, -32, 0, 1),
+		ZIndex = 3,
+	}, topbar)
+	self:_theme(headerDivider, "BackgroundColor3", "Stroke")
 
 	local close = make("TextButton", {
 		AutoButtonColor = false,
@@ -19098,7 +19112,7 @@ function Library:AddTab(options: Options): any
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
 		CanvasSize = UDim2.fromOffset(0, 0),
-		ClipsDescendants = false,
+		ClipsDescendants = true,
 		ScrollBarImageColor3 = self.Theme.Stroke,
 		ScrollBarThickness = 3,
 		Size = UDim2.new(1, -32, 1, -16),
@@ -19170,7 +19184,7 @@ function Library:_card(options: Options, height: number?): Frame
 	local card = make("Frame", {
 		BackgroundColor3 = options.BackgroundColor or self.Theme.Surface,
 		BorderSizePixel = 0,
-		ClipsDescendants = false,
+		ClipsDescendants = true,
 		LayoutOrder = options.LayoutOrder or 1,
 		Size = UDim2.new(1, 0, 0, height or options.Height or 76),
 	}, tab.Page)
@@ -19549,7 +19563,7 @@ function Library:AddDropdown(options: Options): Control
 	self:_theme(selectedLabel, "TextColor3", "Text")
 	local arrow = self:_addIcon(button, "ChevronDown", 16)
 	arrow.Position = UDim2.new(1, -25, 0, 6)
-	local menu = make("Frame", {BackgroundColor3 = self.Theme.Surface2, BorderSizePixel = 0, Position = UDim2.fromOffset(0, 0), Size = UDim2.fromOffset(220, #values * 36 + 12), Visible = false, ZIndex = 210}, self._popupLayer)
+	local menu = make("ScrollingFrame", {Active = true, AutomaticCanvasSize = Enum.AutomaticSize.Y, BackgroundColor3 = self.Theme.Surface2, BorderSizePixel = 0, CanvasSize = UDim2.fromOffset(0, 0), ClipsDescendants = true, Position = UDim2.fromOffset(0, 0), ScrollBarImageColor3 = self.Theme.Stroke, ScrollBarThickness = 3, Size = UDim2.fromOffset(220, math.min(190, #values * 36 + 12)), Visible = false, ZIndex = 210}, self._popupLayer)
 	rounded(menu, 8)
 	stroked(menu, self.Theme.Stroke, 0.35)
 	self:_theme(menu, "BackgroundColor3", "Surface2")
@@ -19575,12 +19589,17 @@ function Library:AddDropdown(options: Options): Control
 	local open = false
 	local function setOpen(newOpen: boolean)
 		open = newOpen
+		if open and self._openPopup and self._openPopup ~= menu then self._openPopup.Visible = false end
+		self._openPopup = open and menu or nil
 		if open then
-			menu.Position = UDim2.fromOffset(
-				button.AbsolutePosition.X,
-				button.AbsolutePosition.Y + button.AbsoluteSize.Y + 5
-			)
-			menu.Size = UDim2.fromOffset(button.AbsoluteSize.X, #values * 36 + 12)
+			local viewport = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(900, 650)
+			local width = button.AbsoluteSize.X
+			local height = math.min(190, #values * 36 + 12)
+			local x = clamp(button.AbsolutePosition.X, 8, math.max(8, viewport.X - width - 8))
+			local y = button.AbsolutePosition.Y + button.AbsoluteSize.Y + 5
+			if y + height > viewport.Y - 8 then y = math.max(8, button.AbsolutePosition.Y - height - 5) end
+			menu.Position = UDim2.fromOffset(x, y)
+			menu.Size = UDim2.fromOffset(width, height)
 		end
 		menu.Visible = open
 		if open then
@@ -19624,7 +19643,7 @@ function Library:AddMultiDropdown(options: Options): Control
 	self:_theme(label, "TextColor3", "Text")
 	local arrow = self:_addIcon(button, "ChevronDown", 16)
 	arrow.Position = UDim2.new(1, -25, 0, 6)
-	local menu = make("Frame", {BackgroundColor3 = self.Theme.Surface2, BorderSizePixel = 0, Position = UDim2.fromOffset(0, 0), Size = UDim2.fromOffset(220, #values * 36 + 12), Visible = false, ZIndex = 210}, self._popupLayer)
+	local menu = make("ScrollingFrame", {Active = true, AutomaticCanvasSize = Enum.AutomaticSize.Y, BackgroundColor3 = self.Theme.Surface2, BorderSizePixel = 0, CanvasSize = UDim2.fromOffset(0, 0), ClipsDescendants = true, Position = UDim2.fromOffset(0, 0), ScrollBarImageColor3 = self.Theme.Stroke, ScrollBarThickness = 3, Size = UDim2.fromOffset(220, math.min(190, #values * 36 + 12)), Visible = false, ZIndex = 210}, self._popupLayer)
 	rounded(menu, 8)
 	stroked(menu, self.Theme.Stroke, 0.35)
 	self:_theme(menu, "BackgroundColor3", "Surface2")
@@ -19682,12 +19701,17 @@ function Library:AddMultiDropdown(options: Options): Control
 	end
 	self:_connect(button.Activated, function()
 		open = not open
+		if open and self._openPopup and self._openPopup ~= menu then self._openPopup.Visible = false end
+		self._openPopup = open and menu or nil
 		if open then
-			menu.Position = UDim2.fromOffset(
-				button.AbsolutePosition.X,
-				button.AbsolutePosition.Y + button.AbsoluteSize.Y + 5
-			)
-			menu.Size = UDim2.fromOffset(button.AbsoluteSize.X, #values * 36 + 12)
+			local viewport = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(900, 650)
+			local width = button.AbsoluteSize.X
+			local height = math.min(190, #values * 36 + 12)
+			local x = clamp(button.AbsolutePosition.X, 8, math.max(8, viewport.X - width - 8))
+			local y = button.AbsolutePosition.Y + button.AbsoluteSize.Y + 5
+			if y + height > viewport.Y - 8 then y = math.max(8, button.AbsolutePosition.Y - height - 5) end
+			menu.Position = UDim2.fromOffset(x, y)
+			menu.Size = UDim2.fromOffset(width, height)
 		end
 		menu.Visible = open
 		if open then
