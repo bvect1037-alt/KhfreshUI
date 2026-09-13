@@ -18350,15 +18350,22 @@ local function stroked(parent: Instance, color: Color3, transparency: number?, t
 end
 
 local function play(object: Instance, properties: {[string]: any}, info: TweenInfo?): Tween?
-	if type(properties) ~= "table" then return nil end
+	if type(properties) ~= "table" or not object then return nil end
+	-- HARD block geometry — tweens on Size/Position under the cursor cause enter/leave loops
+	local safe: {[string]: any} = {}
+	for prop, value in pairs(properties) do
+		if prop ~= "Size" and prop ~= "Position" and prop ~= "AnchorPoint"
+			and prop ~= "Rotation" and prop ~= "CanvasSize" and prop ~= "AutomaticSize" then
+			safe[prop] = value
+		end
+	end
+	if next(safe) == nil then return nil end
 	local ok, result = pcall(function()
-		local animation = TweenService:Create(object, info or MOTION.Smooth, properties)
+		local animation = TweenService:Create(object, info or MOTION.Smooth, safe)
 		animation:Play()
 		return animation
 	end)
-	if ok then
-		return result
-	end
+	if ok then return result end
 	return nil
 end
 
@@ -19114,49 +19121,39 @@ end
 
 function Library:SetVisible(visible: boolean)
 	if self._destroyed then return self end
-	if self._visible == visible and not self._forceVisibleAnim then
-		return self
-	end
+	if self._visible == visible then return self end
 	self._visible = visible == true
 	local window = self.Window
 	if not window then return self end
 
-	-- Soft open/close: scale + transparency (no Size tween — Size changes cause control jump)
-	local scale = window:FindFirstChild("WindowMotionScale")
-	if not scale then
-		scale = Instance.new("UIScale")
-		scale.Name = "WindowMotionScale"
-		scale.Scale = 1
-		scale.Parent = window
-	end
+	-- Fade only (NO UIScale). Scaling the window moves every control under the cursor
+	-- and causes infinite MouseEnter/MouseLeave jump.
+	local fadeInfo = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+	local handles = { self.DragFooter, self.ResizeGrip, self.WindowShadow }
 
-	local fadeInfo = TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-	local handles = { self.DragFooter, self.ResizeGrip }
+	-- Destroy any leftover scale from older builds
+	local leftover = window:FindFirstChild("WindowMotionScale")
+	if leftover then leftover:Destroy() end
 
 	if self._visible then
 		window.Visible = true
 		window.Size = UDim2.fromOffset(self._currentWidth or self._targetWidth, self._currentHeight or self._targetHeight)
-		scale.Scale = 0.94
-		window.BackgroundTransparency = math.min(window.BackgroundTransparency + 0.15, 0.35)
+		window.BackgroundTransparency = 0.25
 		for _, h in ipairs(handles) do
 			if h then h.Visible = true end
 		end
 		pcall(function()
-			TweenService:Create(scale, fadeInfo, { Scale = 1 }):Play()
 			TweenService:Create(window, fadeInfo, { BackgroundTransparency = 0 }):Play()
 		end)
-		self:_updateHandlePositions()
+		task.defer(function() self:_updateHandlePositions() end)
 	else
 		pcall(function()
-			local t1 = TweenService:Create(scale, fadeInfo, { Scale = 0.96 })
-			local t2 = TweenService:Create(window, fadeInfo, { BackgroundTransparency = 0.2 })
-			t1:Play()
-			t2:Play()
-			task.delay(0.2, function()
+			local t = TweenService:Create(window, fadeInfo, { BackgroundTransparency = 0.35 })
+			t:Play()
+			task.delay(0.18, function()
 				if self._destroyed or self._visible then return end
 				window.Visible = false
 				window.BackgroundTransparency = 0
-				scale.Scale = 1
 				for _, h in ipairs(handles) do
 					if h then h.Visible = false end
 				end
@@ -19233,10 +19230,14 @@ function Library:AddTab(options: Options): any
 		ClipsDescendants = true,
 		ScrollBarImageColor3 = self.Theme.Stroke,
 		ScrollBarThickness = 4,
+		ScrollingDirection = Enum.ScrollingDirection.Y,
 		Size = UDim2.new(1, -36, 1, -16),
 		Position = UDim2.fromOffset(16, 8),
 		Visible = false,
 	}, self._contentHost)
+	pcall(function()
+		page.ElasticBehavior = Enum.ElasticBehavior.Never
+	end)
 	page.Name = "Page_" .. tab.Name
 	make("UIPadding", {
 		PaddingBottom = UDim.new(0, 14),
@@ -19455,30 +19456,11 @@ function Library:_makeSection(tab: any, options: Options): any
 	}, frame)
 	make("UIListLayout", {Padding = UDim.new(0, 10), SortOrder = Enum.SortOrder.LayoutOrder}, section.Content)
 	table.insert(tab._sections, section)
-	-- Stable height: debounce AbsoluteContentSize to prevent continuous layout jitter
-	local lastSectionH = -1
-	local function resizeSection()
-		local layout = section.Content:FindFirstChildOfClass("UIListLayout")
-		if not layout then return end
-		local h = math.ceil(layout.AbsoluteContentSize.Y + (options.Title and 35 or 0))
-		if h < 40 then h = 40 end
-		if math.abs(h - lastSectionH) < 1 then return end
-		lastSectionH = h
-		section.Frame.Size = UDim2.new(1, 0, 0, h)
-	end
-	self:_connect(section.Content.ChildAdded, function()
-		task.defer(resizeSection)
-	end)
-	self:_connect(section.Content.ChildRemoved, function()
-		task.defer(resizeSection)
-	end)
-	local sectionLayout = section.Content:FindFirstChildOfClass("UIListLayout")
-	if sectionLayout then
-		self:_connect(sectionLayout:GetPropertyChangedSignal("AbsoluteContentSize"), function()
-			task.defer(resizeSection)
-		end)
-	end
-	task.defer(resizeSection)
+	-- AutomaticSize only — NEVER listen AbsoluteContentSize (that feedback loop jumps controls)
+	section.Frame.AutomaticSize = Enum.AutomaticSize.Y
+	section.Content.AutomaticSize = Enum.AutomaticSize.Y
+	section.Content.Size = UDim2.new(1, 0, 0, 0)
+	section.Frame.Size = UDim2.new(1, 0, 0, options.Title and 35 or 0)
 	return section
 end
 
@@ -19557,14 +19539,9 @@ function Library:AddToggle(options: Options): Control
 	self:_theme(knob, "BackgroundColor3", "Muted")
 	local value = options.Default == true
 	local function render()
-		local buttonColor = self.Theme.Surface3
-		if value then
-			buttonColor = self.Theme.AccentDark
-		end
-		play(button, {BackgroundColor3 = buttonColor}, MOTION.Fast)
-		play(knob, visualFeedback({
-			BackgroundColor3 = (value and self.Theme.Accent or self.Theme.Muted),
-		}), MOTION.Fast)
+		-- Instant only — never tween toggle geometry/color under cursor
+		button.BackgroundColor3 = value and self.Theme.AccentDark or self.Theme.Surface3
+		knob.BackgroundColor3 = value and self.Theme.Accent or self.Theme.Muted
 		knob.Position = value and UDim2.fromOffset(32, 4) or UDim2.fromOffset(4, 4)
 	end
 	local function set(newValue: any, silent: boolean?)
@@ -20287,10 +20264,10 @@ end
 function Tab:_renderSelected()
 	local library = self.Library
 	if self._selected then
-		play(self.Button, {BackgroundColor3 = library.Theme.AccentDark}, MOTION.Fast)
+		self.Button.BackgroundColor3 = library.Theme.AccentDark
 		self.Label.TextColor3 = library.Theme.Accent
 	else
-		play(self.Button, {BackgroundColor3 = library.Theme.Surface2}, MOTION.Fast)
+		self.Button.BackgroundColor3 = library.Theme.Surface2
 		self.Label.TextColor3 = library.Theme.Muted
 	end
 end
@@ -21287,25 +21264,10 @@ local function makeSectionIn(library: any, parent: Instance, tab: any, options: 
 		Size = UDim2.new(1, 0, 1, -top),
 	}, frame)
 	make("UIListLayout", {Padding = UDim.new(0, 10), SortOrder = Enum.SortOrder.LayoutOrder}, section.Content)
-	local lastH = -1
-	local function resize()
-		local layout = section.Content:FindFirstChildOfClass("UIListLayout")
-		if not layout then return end
-		local h = math.ceil(layout.AbsoluteContentSize.Y + top)
-		if h < 40 then h = 40 end
-		if math.abs(h - lastH) < 1 then return end
-		lastH = h
-		frame.Size = UDim2.new(1, 0, 0, h)
-	end
-	library:_connect(section.Content.ChildAdded, function() task.defer(resize) end)
-	library:_connect(section.Content.ChildRemoved, function() task.defer(resize) end)
-	local layout = section.Content:FindFirstChildOfClass("UIListLayout")
-	if layout then
-		library:_connect(layout:GetPropertyChangedSignal("AbsoluteContentSize"), function()
-			task.defer(resize)
-		end)
-	end
-	task.defer(resize)
+	frame.AutomaticSize = Enum.AutomaticSize.Y
+	section.Content.AutomaticSize = Enum.AutomaticSize.Y
+	section.Content.Size = UDim2.new(1, 0, 0, 0)
+	frame.Size = UDim2.new(1, 0, 0, top)
 	return section
 end
 function Section:AddSection(options: Options): any
