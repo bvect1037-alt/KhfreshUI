@@ -18385,28 +18385,21 @@ local function visualFeedback(properties: {[string]: any}): {[string]: any}
 end
 
 -- Safe tween: colors / transparency only
-local function play(object: Instance, properties: {[string]: any}, info: TweenInfo?): Tween?
+-- Stable interaction primitives: no TweenService, no hover animation, no geometry animation.
+local function play(object: Instance, properties: {[string]: any}, _info: TweenInfo?): Tween?
 	if type(properties) ~= "table" or not object then return nil end
 	local safe = visualFeedback(properties)
-	if next(safe) == nil then return nil end
-	local ok, result = pcall(function()
-		local animation = TweenService:Create(object, info or MOTION.Smooth, safe)
-		animation:Play()
-		return animation
-	end)
-	if ok then return result end
+	for property, value in pairs(safe) do
+		pcall(function() (object :: any)[property] = value end)
+	end
 	return nil
 end
 
--- Explicit geometry tween (progress fill only — NEVER use on hover targets)
-local function playGeo(object: Instance, properties: {[string]: any}, info: TweenInfo?): Tween?
+local function playGeo(object: Instance, properties: {[string]: any}, _info: TweenInfo?): Tween?
 	if type(properties) ~= "table" or not object then return nil end
-	local ok, result = pcall(function()
-		local animation = TweenService:Create(object, info or MOTION.Smooth, properties)
-		animation:Play()
-		return animation
-	end)
-	if ok then return result end
+	for property, value in pairs(properties) do
+		pcall(function() (object :: any)[property] = value end)
+	end
 	return nil
 end
 
@@ -20798,41 +20791,27 @@ function Library:_motionInfo(info: TweenInfo?): TweenInfo
 		base.DelayTime
 	)
 end
-function Library:Animate(object: Instance, properties: Options, info: TweenInfo?, key: string?): Tween?
+function Library:Animate(object: Instance, properties: Options, _info: TweenInfo?, key: string?): Tween?
+	-- Legacy API kept as a synchronous setter. Nothing animates geometry or hover state.
 	if self._destroyed or not object or not object.Parent then return nil end
-	if type(properties) ~= "table" then return nil end
-	-- Public Animate is intentionally visual-only. Geometry animation is reserved for
-	-- explicit internal progress code so hover/focus can never move UI objects.
-	if key and self._animations[key] then
-		pcall(function() self._animations[key]:Cancel() end)
-		self._animations[key] = nil
-	end
-	local tween = play(object, visualFeedback(properties), self:_motionInfo(info))
-	if tween and key then
-		self._animations[key] = tween
-		self:TrackCleanup(function()
-			if tween.PlaybackState == Enum.PlaybackState.Playing then tween:Cancel() end
-		end)
-	end
-	return tween
+	play(object, properties)
+	if key then self._animations[key] = nil end
+	return nil
 end
 function Library:StopAnimation(key: string): self
-	local tween = self._animations[key]
-	if tween then tween:Cancel(); self._animations[key] = nil end
+	self._animations[key] = nil
 	return self
 end
-function Library:Pulse(object: GuiObject, property: string?, amount: number?, info: TweenInfo?): Tween?
+function Library:Pulse(_object: GuiObject, _property: string?, _amount: number?, _info: TweenInfo?): Tween?
 	return nil
 end
-function Library:Shake(object: GuiObject, distance: number?, duration: number?): Tween?
-	-- Intentionally disabled: position animation causes the cursor-hover jump/shake bug.
-	-- Keep the API for compatibility with existing hubs.
+function Library:Shake(_object: GuiObject, _distance: number?, _duration: number?): Tween?
 	return nil
 end
-function Library:Hover(object: GuiObject, enter: Options, leave: Options?): self
+function Library:Hover(_object: GuiObject, _enter: Options, _leave: Options?): self
 	return self
 end
-function Library:Press(object: GuiButton, pressed: Options, released: Options?): self
+function Library:Press(_object: GuiButton, _pressed: Options, _released: Options?): self
 	return self
 end
 function Library:IsTouchDevice(): boolean
@@ -22180,9 +22159,6 @@ function Library:Destroy()
 	self:DismissNotifications(true)
 	self:CloseCommandPalette()
 	self:CloseModal()
-	for _, tween in pairs(self._animations) do
-		if tween.PlaybackState == Enum.PlaybackState.Playing then tween:Cancel() end
-	end
 	table.clear(self._animations)
 	self:Cleanup()
 	for _, connection in ipairs(self._connections) do
@@ -22209,6 +22185,209 @@ function Library:GetDebugInfo(): Options
 		VisibleNotifications = #self._notifications,
 	}
 end
+-- ============================================================================
+-- KHFRESH HUB COMPATIBILITY API
+-- This is the native public API for the current Khfresh Hub. It intentionally
+-- sits on top of the stable Add*/Library.new primitives instead of importing
+-- another UI system.
+-- ============================================================================
+
+local __OriginalSetTheme = Library.SetTheme
+function Library:SetTheme(theme: any): self
+	if type(theme) == "string" then
+		-- The Hub passes Theme="Bento". The stable library has one built-in theme.
+		if string.lower(theme) == "bento" or string.lower(theme) == "khfresh" then
+			return self
+		end
+		return self
+	end
+	if type(theme) == "table" then
+		return __OriginalSetTheme(self, theme)
+	end
+	return self
+end
+
+local function __sizeToWH(value: any, fallbackW: number, fallbackH: number): (number, number)
+	if typeof(value) == "UDim2" then
+		local w = value.X.Offset
+		local h = value.Y.Offset
+		if w > 0 then fallbackW = w end
+		if h > 0 then fallbackH = h end
+	end
+	return fallbackW, fallbackH
+end
+
+function Library:CreateWindow(config: Options?): any
+	config = config or {}
+	local width, height = __sizeToWH(config.Size, tonumber(config.Width) or 760, tonumber(config.Height) or 540)
+	local window = Library.new({
+		Name = config.Name or "KhfreshUI",
+		Title = config.Title or "Khfresh Hub",
+		Subtitle = config.Subtitle or config.Author or "Khfresh",
+		Width = width,
+		Height = height,
+		Theme = type(config.Theme) == "table" and config.Theme or nil,
+		AllowProcessedInput = config.AllowProcessedInput == true,
+		PerformanceProfile = config.PerformanceProfile or config.Profile or "PC",
+		IconAssets = config.IconAssets,
+		IconPack = config.IconPack or "lucide",
+	})
+	-- Compatibility aliases consumed by the current Hub.
+	window._raw = window
+	window._gui = window.Gui
+	window._shell = window.Window
+	window._content = window._contentHost
+	window._nav = window._tabsBar
+
+	-- Hub logo/background are optional. Both stay behind normal controls.
+	if type(config.Background) == "string" and config.Background ~= "" and window.Window then
+		local bg = make("ImageLabel", {
+			Name = "KhfreshBackground",
+			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
+			Position = UDim2.fromScale(0, 0),
+			Size = UDim2.fromScale(1, 1),
+			Image = config.Background,
+			ImageTransparency = tonumber(config.BackgroundImageTransparency) or 0.58,
+			ScaleType = Enum.ScaleType.Crop,
+			ZIndex = 0,
+		}, window.Window)
+		window._backgroundImage = bg
+	end
+
+	function window:SetLogo(asset: any): any
+		if type(asset) ~= "string" or asset == "" then return self end
+		self._hubLogoAsset = asset
+		local top = self.Window and self.Window:FindFirstChild("Topbar")
+		local holder = top and top:FindFirstChild("AlgorithmicLogo")
+		if holder then
+			local image = holder:FindFirstChild("HubLogoImage")
+			if not image then
+				image = make("ImageLabel", {
+					Name = "HubLogoImage", BackgroundTransparency = 1, BorderSizePixel = 0,
+					Size = UDim2.fromScale(1, 1), ZIndex = 6, ScaleType = Enum.ScaleType.Fit,
+				}, holder)
+			end
+			image.Image = string.find(asset, "rbxassetid://", 1, true) and asset or "rbxassetid://" .. asset
+			for _, child in ipairs(holder:GetChildren()) do
+				if child ~= image and not child:IsA("UICorner") and not child:IsA("UIStroke") then
+					pcall(function() child.Visible = false end)
+				end
+			end
+		end
+		return self
+	end
+
+	function window:SetBackground(asset: any, _mode: any, transparency: any): any
+		if type(asset) ~= "string" or asset == "" or not self.Window then return self end
+		local bg = self._backgroundImage
+		if not bg then
+			bg = make("ImageLabel", {
+				Name = "KhfreshBackground", BackgroundTransparency = 1, BorderSizePixel = 0,
+				Position = UDim2.fromScale(0, 0), Size = UDim2.fromScale(1, 1),
+				ScaleType = Enum.ScaleType.Crop, ZIndex = 0,
+			}, self.Window)
+			self._backgroundImage = bg
+		end
+		bg.Image = string.find(asset, "rbxassetid://", 1, true) and asset or "rbxassetid://" .. asset
+		bg.ImageTransparency = tonumber(transparency) or 0.58
+		return self
+	end
+
+	function window:GetTab(name: string): any
+		for _, tab in ipairs(self._tabs) do if tab.Name == name then return tab end end
+		return nil
+	end
+
+	function window:CreateTab(nameOrConfig: any, iconName: any): any
+		local options
+		if type(nameOrConfig) == "table" then
+			options = {
+				Name = nameOrConfig.Title or nameOrConfig.Name or "Tab",
+				Icon = nameOrConfig.Icon or iconName,
+				LayoutOrder = nameOrConfig.LayoutOrder, Hidden = nameOrConfig.Hidden,
+			}
+		else
+			options = {Name = tostring(nameOrConfig or "Tab"), Icon = iconName}
+		end
+		local tab = self:AddTab(options)
+		function tab:CreateSection(sectionOrName: any, side: any): any
+			local opt
+			if type(sectionOrName) == "table" then
+				opt = sectionOrName
+			else
+				opt = {Name = tostring(sectionOrName or "Section"), Title = tostring(sectionOrName or "Section"), Side = side}
+			end
+			local sec = self:AddSection(opt)
+			local function alias(name, target)
+				if type(sec[name]) ~= "function" then sec[name] = target end
+			end
+			alias("CreateLabel", function(self2, c) return self2:AddLabel(type(c) == "table" and c or {Text = tostring(c or "")}) end)
+			alias("CreateToggle", function(self2, c) return self2:AddToggle(c or {}) end)
+			alias("CreateButton", function(self2, c) return self2:AddButton(c or {}) end)
+			alias("CreateSlider", function(self2, c) return self2:AddSlider(c or {}) end)
+			alias("CreateDropdown", function(self2, c) return self2:AddDropdown(c or {}) end)
+			alias("CreateMultiDropdown", function(self2, c) return self2:AddMultiDropdown(c or {}) end)
+			alias("CreateTextbox", function(self2, c) return self2:AddTextbox(c or {}) end)
+			alias("CreateKeybind", function(self2, c) return self2:AddKeybind(c or {}) end)
+			alias("CreateColorpicker", function(self2, c) return self2:AddColorPicker(c or {}) end)
+			alias("CreateColorPicker", function(self2, c) return self2:AddColorPicker(c or {}) end)
+			return sec
+		end
+		function tab:CreateHeader(c: any): any
+		c = type(c) == "table" and c or {Title = tostring(c or "")}
+		local frame = make("Frame", {
+			BackgroundTransparency = 1, BorderSizePixel = 0,
+			Size = UDim2.new(1, 0, 0, c.Subtitle and 48 or 30),
+			LayoutOrder = #self.Page:GetChildren() + 1,
+		}, self.Page)
+		if c.Icon then
+			local mark = self.Library:_addIcon(frame, c.Icon, 16)
+			mark.Position = UDim2.fromOffset(0, 7)
+		end
+		local left = c.Icon and 24 or 0
+		local title = make("TextLabel", {
+			BackgroundTransparency = 1, BorderSizePixel = 0,
+			Font = Enum.Font.GothamSemibold, Text = tostring(c.Title or c.Text or ""),
+			Position = UDim2.fromOffset(left, 3), Size = UDim2.new(1, -left, 0, 21),
+			TextSize = c.TextSize or 15, TextXAlignment = Enum.TextXAlignment.Left,
+		}, frame)
+		self.Library:_theme(title, "TextColor3", "Text")
+		if c.Subtitle or c.Desc then
+			local sub = make("TextLabel", {
+				BackgroundTransparency = 1, BorderSizePixel = 0, Font = Enum.Font.Gotham,
+				Text = tostring(c.Subtitle or c.Desc or ""), Position = UDim2.fromOffset(left, 25),
+				Size = UDim2.new(1, -left, 0, 18), TextSize = 11,
+				TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
+			}, frame)
+			self.Library:_theme(sub, "TextColor3", "Muted")
+		end
+		return frame
+	end
+		function tab:CreateButton(c: any): any return self:AddButton(c or {}) end
+		function tab:CreateToggle(c: any): any return self:AddToggle(c or {}) end
+		function tab:CreateDropdown(c: any): any return self:AddDropdown(c or {}) end
+		function tab:CreateMultiDropdown(c: any): any return self:AddMultiDropdown(c or {}) end
+		function tab:CreateTextbox(c: any): any return self:AddTextbox(c or {}) end
+		function tab:CreateSlider(c: any): any return self:AddSlider(c or {}) end
+		return tab
+	end
+
+	function window:CreateFloatingToggle(config2: Options?): any
+		local btn = self.FloatingToggle
+		if btn then
+			btn.Visible = true
+			return btn
+		end
+		return nil
+	end
+
+	if config.Logo then
+		pcall(function() window:SetLogo(config.Logo) end)
+	end
+	return window
+end
+
 Library.ThemePresets = THEME_PRESETS
 Library.Breakpoints = BREAKPOINTS
 Library.LucideAssets = LUCIDE_ASSETS
