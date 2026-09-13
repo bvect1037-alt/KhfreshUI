@@ -1,5 +1,5 @@
 --[[
-	BentoLucide Executor UI Library (patched: dropdown/keybind/resize/hover)
+	BentoLucide Executor UI Library
 
 	This file is the UI payload for Roblox script executors. Load it with an
 	executor loader using game:HttpGet and loadstring, for example:
@@ -18363,13 +18363,11 @@ end
 
 local function visualFeedback(properties: {[string]: any}): {[string]: any}
 	local result: {[string]: any} = {}
-	local blocked = {
-		Size = true, Position = true, AnchorPoint = true, Rotation = true,
-		TextSize = true, Text = true, Font = true, FontFace = true,
-		AutomaticSize = true, CanvasSize = true,
-	}
 	for property, value in pairs(properties) do
-		if not blocked[property] then
+		if property ~= "Size"
+			and property ~= "Position"
+			and property ~= "AnchorPoint"
+			and property ~= "Rotation" then
 			result[property] = value
 		end
 	end
@@ -18664,6 +18662,10 @@ local function draggable(library: any, target: GuiObject, handle: GuiObject)
 		if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then
 			return
 		end
+		if library._openPopup then
+			library._openPopup.Visible = false
+			library._openPopup = nil
+		end
 		dragging = true
 		startInput = input.Position
 		startPosition = target.Position
@@ -18699,6 +18701,10 @@ local function resizable(library: any, target: GuiObject, handle: GuiObject)
 		if input.UserInputType ~= Enum.UserInputType.MouseButton1
 			and input.UserInputType ~= Enum.UserInputType.Touch then
 			return
+		end
+		if library._openPopup then
+			library._openPopup.Visible = false
+			library._openPopup = nil
 		end
 		resizing = true
 		startInput = input.Position
@@ -18785,6 +18791,7 @@ function Library.new(options: Options?): any
 		ZIndex = 200,
 	}, gui)
 	self._popupLayer = popupLayer
+	self._openPopup = nil
 	local requestedProfile = tostring(config.PerformanceProfile or config.Profile or "PC"):lower()
 	if requestedProfile == "mobile" or requestedProfile == "phone" or requestedProfile == "touch" then
 		self.PerformanceProfile = "Mobile"
@@ -18977,8 +18984,6 @@ function Library.new(options: Options?): any
 		Name = "ResizeGrip",
 		Position = UDim2.fromOffset(0, 0),
 		Size = UDim2.fromOffset(48, 42),
-		Text = "",
-		TextTransparency = 1,
 		ZIndex = 16,
 	}, gui)
 	local gripBarA = make("Frame", {
@@ -19118,8 +19123,8 @@ function Library:AddTab(options: Options): any
 		CanvasSize = UDim2.fromOffset(0, 0),
 		ClipsDescendants = true,
 		ScrollBarImageColor3 = self.Theme.Stroke,
-		ScrollBarThickness = 4,
-		Size = UDim2.new(1, -36, 1, -16),
+		ScrollBarThickness = 3,
+		Size = UDim2.new(1, -32, 1, -16),
 		Position = UDim2.fromOffset(16, 8),
 		Visible = false,
 	}, self._contentHost)
@@ -19127,8 +19132,6 @@ function Library:AddTab(options: Options): any
 	make("UIPadding", {
 		PaddingBottom = UDim.new(0, 14),
 		PaddingTop = UDim.new(0, 4),
-		PaddingRight = UDim.new(0, 10),
-		PaddingLeft = UDim.new(0, 2),
 	}, page)
 	local pageLayout = make("UIListLayout", {
 		Padding = UDim.new(0, 10),
@@ -19136,6 +19139,12 @@ function Library:AddTab(options: Options): any
 	}, page)
 	tab.Page = page
 	tab.Layout = pageLayout
+	self:_connect(page:GetPropertyChangedSignal("CanvasPosition"), function()
+		if self._openPopup then
+			self._openPopup.Visible = false
+			self._openPopup = nil
+		end
+	end)
 	table.insert(self._tabs, tab)
 	self:_connect(button.Activated, function() self:SelectTab(tab) end)
 	self:_connect(button.MouseEnter, function()
@@ -19408,6 +19417,8 @@ function Library:AddToggle(options: Options): Control
 		Position = UDim2.new(1, -72, 0, 18),
 		Size = UDim2.fromOffset(56, 28),
 		Text = "",
+		TextScaled = false,
+		TextWrapped = false,
 	}, card)
 	rounded(button, 14)
 	self:_theme(button, "BackgroundColor3", "Surface3")
@@ -19560,67 +19571,23 @@ function Library:AddDropdown(options: Options): Control
 		BackgroundColor3 = self.Theme.Surface3,
 		BorderSizePixel = 0,
 		Position = UDim2.fromOffset(16, 42),
-		Size = UDim2.new(1, -32, 0, 28),
+		Size = UDim2.new(1, -32, 28, 0),
 		Text = "",
-		TextTransparency = 1,
 	}, card)
 	rounded(button, 8)
 	self:_theme(button, "BackgroundColor3", "Surface3")
-	local selectedLabel = make("TextLabel", {
-		BackgroundTransparency = 1,
-		Font = Enum.Font.Gotham,
-		Position = UDim2.fromOffset(10, 0),
-		Size = UDim2.new(1, -36, 1, 0),
-		TextSize = 12,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		TextTruncate = Enum.TextTruncate.AtEnd,
-		TextWrapped = false,
-	}, button)
+	local selectedLabel = make("TextLabel", {BackgroundTransparency = 1, Font = Enum.Font.Gotham, Position = UDim2.fromOffset(10, 0), Size = UDim2.new(1, -42, 1, 0), TextSize = 11, TextScaled = false, TextWrapped = false, TextTruncate = Enum.TextTruncate.AtEnd, TextXAlignment = Enum.TextXAlignment.Left}, button)
+	self:_theme(selectedLabel, "TextColor3", "Text")
 	local arrow = self:_addIcon(button, "ChevronDown", 16)
-	arrow.Position = UDim2.new(1, -25, 0.5, -8)
-
-	-- Compact vertical popup; auto-width from longest option text
-	local itemH = 26
-	local padY = 8
-	local padX = 8
-	local scrollW = 6
-	local maxH = 168
-	local longest = 0
-	for _, candidate in ipairs(values) do
-		longest = math.max(longest, #tostring(candidate))
-	end
-	-- ~7px per char + padding; clamp to sensible range
-	local autoW = clamp(longest * 7 + 36, 120, 280)
-
-	local menu = make("ScrollingFrame", {
-		Active = true,
-		AutomaticCanvasSize = Enum.AutomaticSize.Y,
-		BackgroundColor3 = self.Theme.Surface2,
-		BorderSizePixel = 0,
-		CanvasSize = UDim2.fromOffset(0, 0),
-		ClipsDescendants = true,
-		Position = UDim2.fromOffset(0, 0),
-		ScrollBarImageColor3 = self.Theme.Stroke,
-		ScrollBarThickness = scrollW,
-		ScrollingDirection = Enum.ScrollingDirection.Y,
-		Size = UDim2.fromOffset(autoW, math.min(maxH, #values * (itemH + 4) + padY * 2)),
-		Visible = false,
-		ZIndex = 250,
-	}, self._popupLayer)
-	rounded(menu, 10)
-	stroked(menu, self.Theme.Stroke, 0.25)
+	arrow.Position = UDim2.new(1, -25, 0, 6)
+	local menu = make("ScrollingFrame", {Active = true, AutomaticCanvasSize = Enum.AutomaticSize.Y, BackgroundColor3 = self.Theme.Surface2, BorderSizePixel = 0, CanvasSize = UDim2.fromOffset(0, 0), ClipsDescendants = true, Position = UDim2.fromOffset(0, 0), ScrollBarImageColor3 = self.Theme.Stroke, ScrollBarThickness = 3, Size = UDim2.fromOffset(220, math.min(190, #values * 36 + 12)), Visible = false, ZIndex = 210}, self._popupLayer)
+	rounded(menu, 8)
+	stroked(menu, self.Theme.Stroke, 0.35)
 	self:_theme(menu, "BackgroundColor3", "Surface2")
-	make("UIPadding", {
-		PaddingTop = UDim.new(0, padY),
-		PaddingBottom = UDim.new(0, padY),
-		PaddingLeft = UDim.new(0, padX),
-		PaddingRight = UDim.new(0, padX + scrollW),
-	}, menu)
-	make("UIListLayout", {
-		Padding = UDim.new(0, 4),
+	local menuLayout = make("UIListLayout", {
+		Padding = UDim.new(0, 6),
 		SortOrder = Enum.SortOrder.LayoutOrder,
 	}, menu)
-
 	local value: any = options.Default
 	local function display()
 		if value == nil or value == "" then
@@ -19633,88 +19600,59 @@ function Library:AddDropdown(options: Options): Control
 	end
 	local function set(newValue: any, silent: boolean?)
 		for _, candidate in ipairs(values) do
-			if candidate == newValue then
-				value = newValue
-				break
-			end
+			if candidate == newValue then value = newValue break end
 		end
 		display()
 		if not silent then invoke(options.Callback, value) end
 	end
-
 	local open = false
 	local function setOpen(newOpen: boolean)
 		open = newOpen
-		if open and self._openPopup and self._openPopup ~= menu then
-			self._openPopup.Visible = false
-		end
+		if open and self._openPopup and self._openPopup ~= menu then self._openPopup.Visible = false end
 		self._openPopup = open and menu or nil
 		if open then
-			local viewport = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(900, 650)
-			local width = clamp(math.max(button.AbsoluteSize.X, autoW), 120, 300)
-			local height = math.min(maxH, #values * (itemH + 4) + padY * 2)
-			local x = clamp(button.AbsolutePosition.X, 8, math.max(8, viewport.X - width - 8))
-			local y = button.AbsolutePosition.Y + button.AbsoluteSize.Y + 4
-			if y + height > viewport.Y - 8 then
-				y = math.max(8, button.AbsolutePosition.Y - height - 4)
-			end
-			menu.Position = UDim2.fromOffset(math.floor(x), math.floor(y))
-			menu.Size = UDim2.fromOffset(math.floor(width), math.floor(height))
+			local panelPosition = self.Window.AbsolutePosition
+			local panelSize = self.Window.AbsoluteSize
+			local width = math.min(button.AbsoluteSize.X, math.max(180, panelSize.X - 32))
+			local height = math.min(190, #values * 36 + 12)
+			local left = panelPosition.X + 16
+			local right = panelPosition.X + panelSize.X - width - 16
+			local x = clamp(button.AbsolutePosition.X, left, math.max(left, right))
+			local y = button.AbsolutePosition.Y + button.AbsoluteSize.Y + 5
+			local bottom = panelPosition.Y + panelSize.Y - 8
+			if y + height > bottom then y = math.max(panelPosition.Y + 8, button.AbsolutePosition.Y - height - 5) end
+			menu.Position = UDim2.fromOffset(x, y)
+			menu.Size = UDim2.fromOffset(width, height)
 		end
 		menu.Visible = open
-		arrow.Rotation = open and 180 or 0
+		if open then
+			arrow.Rotation = 180
+		else
+			arrow.Rotation = 0
+		end
 	end
-
 	for index, candidate in ipairs(values) do
 		local item = make("TextButton", {
 			AutoButtonColor = false,
 			BackgroundColor3 = self.Theme.Surface3,
 			BorderSizePixel = 0,
-			Font = Enum.Font.GothamMedium,
 			LayoutOrder = index,
-			Size = UDim2.new(1, 0, 0, itemH),
+			Size = UDim2.new(1, -10, 0, 28),
 			Text = tostring(candidate),
 			TextSize = 11,
+			TextScaled = false,
+			TextWrapped = false,
 			TextXAlignment = Enum.TextXAlignment.Left,
-			TextTruncate = Enum.TextTruncate.AtEnd,
-			ZIndex = 251,
+			ZIndex = 221,
 		}, menu)
-		rounded(item, 6)
+		rounded(item, 7)
+		stroked(item, self.Theme.Stroke, 0.35)
 		self:_theme(item, "BackgroundColor3", "Surface3")
+		make("UIPadding", {PaddingLeft = UDim.new(0, 10)}, item)
 		self:_theme(item, "TextColor3", "Muted")
-		make("UIPadding", {PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8)}, item)
-		self:_connect(item.MouseEnter, function()
-			item.BackgroundColor3 = self.Theme.AccentDark
-			item.TextColor3 = self.Theme.Accent
-		end)
-		self:_connect(item.MouseLeave, function()
-			item.BackgroundColor3 = self.Theme.Surface3
-			item.TextColor3 = self.Theme.Muted
-		end)
-		self:_connect(item.Activated, function()
-			set(candidate, false)
-			setOpen(false)
-		end)
+		self:_connect(item.Activated, function() set(candidate, false); setOpen(false) end)
 	end
-
 	self:_connect(button.Activated, function() setOpen(not open) end)
-	-- close when clicking elsewhere on the gui
-	self:_connect(UserInputService.InputBegan, function(input: InputObject)
-		if not open then return end
-		if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then
-			return
-		end
-		local pos = input.Position
-		local mpos = menu.AbsolutePosition
-		local msize = menu.AbsoluteSize
-		local bpos = button.AbsolutePosition
-		local bsize = button.AbsoluteSize
-		local overMenu = pos.X >= mpos.X and pos.X <= mpos.X + msize.X and pos.Y >= mpos.Y and pos.Y <= mpos.Y + msize.Y
-		local overBtn = pos.X >= bpos.X and pos.X <= bpos.X + bsize.X and pos.Y >= bpos.Y and pos.Y <= bpos.Y + bsize.Y
-		if not overMenu and not overBtn then
-			setOpen(false)
-		end
-	end)
 	display()
 	return controlObject(self, card, options.ConfigKey or options.Name, set, function() return value end)
 end
@@ -19723,69 +19661,22 @@ function Library:AddMultiDropdown(options: Options): Control
 	local values = optionList(options)
 	local card = self:_card(options, 96)
 	self:_heading(card, options, 10, false)
-	local button = make("TextButton", {
-		AutoButtonColor = false,
-		BackgroundColor3 = self.Theme.Surface3,
-		BorderSizePixel = 0,
-		Position = UDim2.fromOffset(16, 42),
-		Size = UDim2.new(1, -32, 0, 28),
-		Text = "",
-		TextTransparency = 1,
-	}, card)
+	local button = make("TextButton", {AutoButtonColor = false, BackgroundColor3 = self.Theme.Surface3, BorderSizePixel = 0, Position = UDim2.fromOffset(16, 42), Size = UDim2.new(1, -32, 28, 0), Text = ""}, card)
 	rounded(button, 8)
 	self:_theme(button, "BackgroundColor3", "Surface3")
-	local label = make("TextLabel", {
-		BackgroundTransparency = 1,
-		Font = Enum.Font.Gotham,
-		Position = UDim2.fromOffset(10, 0),
-		Size = UDim2.new(1, -36, 1, 0),
-		TextSize = 12,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		TextTruncate = Enum.TextTruncate.AtEnd,
-	}, button)
+	local label = make("TextLabel", {BackgroundTransparency = 1, Font = Enum.Font.Gotham, Position = UDim2.fromOffset(10, 0), Size = UDim2.new(1, -42, 1, 0), TextSize = 11, TextScaled = false, TextWrapped = false, TextTruncate = Enum.TextTruncate.AtEnd, TextXAlignment = Enum.TextXAlignment.Left}, button)
+	self:_theme(label, "TextColor3", "Text")
 	local arrow = self:_addIcon(button, "ChevronDown", 16)
-	arrow.Position = UDim2.new(1, -25, 0.5, -8)
-
-	local itemH = 26
-	local padY, padX, scrollW, maxH = 8, 8, 6, 168
-	local longest = 0
-	for _, candidate in ipairs(values) do
-		longest = math.max(longest, #tostring(candidate))
-	end
-	local autoW = clamp(longest * 7 + 48, 140, 300)
-
-	local menu = make("ScrollingFrame", {
-		Active = true,
-		AutomaticCanvasSize = Enum.AutomaticSize.Y,
-		BackgroundColor3 = self.Theme.Surface2,
-		BorderSizePixel = 0,
-		CanvasSize = UDim2.fromOffset(0, 0),
-		ClipsDescendants = true,
-		ScrollBarImageColor3 = self.Theme.Stroke,
-		ScrollBarThickness = scrollW,
-		ScrollingDirection = Enum.ScrollingDirection.Y,
-		Size = UDim2.fromOffset(autoW, math.min(maxH, #values * (itemH + 4) + padY * 2)),
-		Visible = false,
-		ZIndex = 250,
-	}, self._popupLayer)
-	rounded(menu, 10)
-	stroked(menu, self.Theme.Stroke, 0.25)
+	arrow.Position = UDim2.new(1, -25, 0, 6)
+	local menu = make("ScrollingFrame", {Active = true, AutomaticCanvasSize = Enum.AutomaticSize.Y, BackgroundColor3 = self.Theme.Surface2, BorderSizePixel = 0, CanvasSize = UDim2.fromOffset(0, 0), ClipsDescendants = true, Position = UDim2.fromOffset(0, 0), ScrollBarImageColor3 = self.Theme.Stroke, ScrollBarThickness = 3, Size = UDim2.fromOffset(220, math.min(190, #values * 36 + 12)), Visible = false, ZIndex = 210}, self._popupLayer)
+	rounded(menu, 8)
+	stroked(menu, self.Theme.Stroke, 0.35)
 	self:_theme(menu, "BackgroundColor3", "Surface2")
-	make("UIPadding", {
-		PaddingTop = UDim.new(0, padY),
-		PaddingBottom = UDim.new(0, padY),
-		PaddingLeft = UDim.new(0, padX),
-		PaddingRight = UDim.new(0, padX + scrollW),
-	}, menu)
-	make("UIListLayout", {Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder}, menu)
-
 	local selected: {[any]: boolean} = {}
 	for _, item in ipairs(options.Default or {}) do selected[item] = true end
 	local function render()
 		local names = {}
-		for _, item in ipairs(values) do
-			if selected[item] then table.insert(names, tostring(item)) end
-		end
+		for _, item in ipairs(values) do if selected[item] then table.insert(names, tostring(item)) end end
 		if #names == 0 then
 			label.Text = options.Placeholder or "Select here to choose"
 			label.TextColor3 = self.Theme.Muted
@@ -19798,107 +19689,72 @@ function Library:AddMultiDropdown(options: Options): Control
 		if type(newValue) == "table" then
 			selected = {}
 			for _, item in ipairs(newValue) do selected[item] = true end
-		elseif newValue ~= nil then
-			selected[newValue] = not selected[newValue]
-		end
+		elseif newValue ~= nil then selected[newValue] = not selected[newValue] end
 		render()
 		if not silent then
 			local result = {}
-			for _, item in ipairs(values) do
-				if selected[item] then table.insert(result, item) end
-			end
+			for _, item in ipairs(values) do if selected[item] then table.insert(result, item) end end
 			invoke(options.Callback, result)
 		end
 	end
-
 	local open = false
-	local function setOpen(newOpen: boolean)
-		open = newOpen
-		if open and self._openPopup and self._openPopup ~= menu then
-			self._openPopup.Visible = false
-		end
-		self._openPopup = open and menu or nil
-		if open then
-			local viewport = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(900, 650)
-			local width = clamp(math.max(button.AbsoluteSize.X, autoW), 140, 320)
-			local height = math.min(maxH, #values * (itemH + 4) + padY * 2)
-			local x = clamp(button.AbsolutePosition.X, 8, math.max(8, viewport.X - width - 8))
-			local y = button.AbsolutePosition.Y + button.AbsoluteSize.Y + 4
-			if y + height > viewport.Y - 8 then
-				y = math.max(8, button.AbsolutePosition.Y - height - 4)
-			end
-			menu.Position = UDim2.fromOffset(math.floor(x), math.floor(y))
-			menu.Size = UDim2.fromOffset(math.floor(width), math.floor(height))
-		end
-		menu.Visible = open
-		arrow.Rotation = open and 180 or 0
-	end
-
 	for index, itemValue in ipairs(values) do
 		local item = make("TextButton", {
 			AutoButtonColor = false,
 			BackgroundColor3 = self.Theme.Surface3,
 			BorderSizePixel = 0,
 			LayoutOrder = index,
-			Size = UDim2.new(1, 0, 0, itemH),
+			Size = UDim2.new(1, -10, 0, 28),
 			Text = "",
-			ZIndex = 251,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			ZIndex = 221,
 		}, menu)
-		rounded(item, 6)
+		rounded(item, 7)
+		stroked(item, self.Theme.Stroke, 0.35)
 		self:_theme(item, "BackgroundColor3", "Surface3")
-		local check = make("TextLabel", {
-			BackgroundTransparency = 1,
-			Font = Enum.Font.GothamMedium,
-			Position = UDim2.fromOffset(8, 0),
-			Size = UDim2.fromOffset(18, itemH),
-			TextSize = 12,
-			TextXAlignment = Enum.TextXAlignment.Left,
-			ZIndex = 252,
-		}, item)
+		local check = make("TextLabel", {BackgroundTransparency = 1, Font = Enum.Font.GothamMedium, Position = UDim2.fromOffset(9, 0), Size = UDim2.fromOffset(22, 28), TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 222}, item)
 		self:_theme(check, "TextColor3", "Accent")
-		local itemLabel = make("TextLabel", {
-			BackgroundTransparency = 1,
-			Font = Enum.Font.GothamMedium,
-			Position = UDim2.fromOffset(28, 0),
-			Size = UDim2.new(1, -36, 1, 0),
-			Text = tostring(itemValue),
-			TextSize = 11,
-			TextXAlignment = Enum.TextXAlignment.Left,
-			TextTruncate = Enum.TextTruncate.AtEnd,
-			ZIndex = 252,
-		}, item)
+		local itemLabel = make("TextLabel", {BackgroundTransparency = 1, Font = Enum.Font.Gotham, Position = UDim2.fromOffset(36, 0), Size = UDim2.new(1, -46, 1, 0), Text = tostring(itemValue), TextSize = 11, TextScaled = false, TextWrapped = false, TextTruncate = Enum.TextTruncate.AtEnd, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 222}, item)
 		self:_theme(itemLabel, "TextColor3", "Muted")
 		local function renderItem()
-			check.Text = selected[itemValue] and "✓" or ""
-			item.BackgroundColor3 = selected[itemValue] and self.Theme.AccentDark or self.Theme.Surface3
-			itemLabel.TextColor3 = selected[itemValue] and self.Theme.Accent or self.Theme.Muted
+			if selected[itemValue] then
+				check.Text = "✓"
+			else
+				check.Text = ""
+			end
 		end
 		renderItem()
-		self:_connect(item.Activated, function()
-			set(itemValue, false)
-			renderItem()
-		end)
+		self:_connect(item.Activated, function() set(itemValue, false); renderItem() end)
 	end
-
-	self:_connect(button.Activated, function() setOpen(not open) end)
-	self:_connect(UserInputService.InputBegan, function(input: InputObject)
-		if not open then return end
-		if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then
-			return
+	self:_connect(button.Activated, function()
+		open = not open
+		if open and self._openPopup and self._openPopup ~= menu then self._openPopup.Visible = false end
+		self._openPopup = open and menu or nil
+		if open then
+			local panelPosition = self.Window.AbsolutePosition
+			local panelSize = self.Window.AbsoluteSize
+			local width = math.min(button.AbsoluteSize.X, math.max(180, panelSize.X - 32))
+			local height = math.min(190, #values * 36 + 12)
+			local left = panelPosition.X + 16
+			local right = panelPosition.X + panelSize.X - width - 16
+			local x = clamp(button.AbsolutePosition.X, left, math.max(left, right))
+			local y = button.AbsolutePosition.Y + button.AbsoluteSize.Y + 5
+			local bottom = panelPosition.Y + panelSize.Y - 8
+			if y + height > bottom then y = math.max(panelPosition.Y + 8, button.AbsolutePosition.Y - height - 5) end
+			menu.Position = UDim2.fromOffset(x, y)
+			menu.Size = UDim2.fromOffset(width, height)
 		end
-		local pos = input.Position
-		local mpos, msize = menu.AbsolutePosition, menu.AbsoluteSize
-		local bpos, bsize = button.AbsolutePosition, button.AbsoluteSize
-		local overMenu = pos.X >= mpos.X and pos.X <= mpos.X + msize.X and pos.Y >= mpos.Y and pos.Y <= mpos.Y + msize.Y
-		local overBtn = pos.X >= bpos.X and pos.X <= bpos.X + bsize.X and pos.Y >= bpos.Y and pos.Y <= bpos.Y + bsize.Y
-		if not overMenu and not overBtn then setOpen(false) end
+		menu.Visible = open
+		if open then
+			arrow.Rotation = 180
+		else
+			arrow.Rotation = 0
+		end
 	end)
 	render()
 	return controlObject(self, card, options.ConfigKey or options.Name, set, function()
 		local result = {}
-		for _, item in ipairs(values) do
-			if selected[item] then table.insert(result, item) end
-		end
+		for _, item in ipairs(values) do if selected[item] then table.insert(result, item) end end
 		return result
 	end)
 end
@@ -19914,7 +19770,7 @@ function Library:AddTextbox(options: Options): Control
 		PlaceholderColor3 = self.Theme.Muted,
 		PlaceholderText = options.Placeholder or "Type here...",
 		Position = UDim2.fromOffset(16, 38),
-		Size = UDim2.new(1, -32, 0, 28),
+		Size = UDim2.new(1, -32, 28, 0),
 		Text = options.Default or "",
 		TextColor3 = self.Theme.Text,
 		TextSize = 12,
@@ -19941,7 +19797,7 @@ end
 function Library:AddKeybind(options: Options): Control
 	local card = self:_card(options, options.Height or 64)
 	self:_heading(card, options, 12, false)
-	local button = make("TextButton", {AutoButtonColor = false, BackgroundColor3 = self.Theme.Surface3, BorderSizePixel = 0, Position = UDim2.new(1, -120, 0, 14), Size = UDim2.fromOffset(104, 28), Text = "", TextSize = 11, Font = Enum.Font.GothamMedium, TextTruncate = Enum.TextTruncate.AtEnd}, card)
+	local button = make("TextButton", {AutoButtonColor = false, BackgroundColor3 = self.Theme.Surface3, BorderSizePixel = 0, Position = UDim2.new(1, -120, 0, 14), Size = UDim2.fromOffset(104, 28), TextSize = 11, TextScaled = false, TextWrapped = false}, card)
 	rounded(button, 8)
 	self:_theme(button, "BackgroundColor3", "Surface3")
 	self:_theme(button, "TextColor3", "Text")
