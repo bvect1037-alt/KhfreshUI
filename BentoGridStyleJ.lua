@@ -18213,11 +18213,11 @@ local function khfreshResolveIcon(name)
 	end
 	return nil
 end
-KhfreshUI.ResolveIcon = khfreshResolveIcon
-KhfreshUI.LucideAssets = BUILTIN_LUCIDE_ASSETS
 -- ===== END ICON PACK =====
 
 local KhfreshUI = { _windows = {}, _notificationGui = nil }
+KhfreshUI.ResolveIcon = khfreshResolveIcon
+KhfreshUI.LucideAssets = (type(BUILTIN_LUCIDE_ASSETS) == "table" and BUILTIN_LUCIDE_ASSETS) or {}
 
 -- Two locked visual profiles. system24 values are sRGB conversions of the
 -- upstream OKLCH defaults (neutral 19/23/27/31% surfaces and purple h310).
