@@ -19198,6 +19198,34 @@ function Library.new(options: Options?): any
 		self._fadeHost = fadeHost
 	end
 	task.defer(function() self:_updateHandlePositions() end)
+
+	-- Heartbeat geometry guardian: force locked Size/Position every frame if drifted
+	self._freezeConn = game:GetService("RunService").Heartbeat:Connect(function()
+		if self._destroyed or FreezeBusy then return end
+		FreezeBusy = true
+		for obj, snap in pairs(FreezeRegistry) do
+			if obj.Parent then
+				if obj.Size ~= snap.Size then obj.Size = snap.Size end
+				if obj.Position ~= snap.Position then obj.Position = snap.Position end
+				if obj.AnchorPoint ~= snap.AnchorPoint then obj.AnchorPoint = snap.AnchorPoint end
+			else
+				FreezeRegistry[obj] = nil
+			end
+		end
+		FreezeBusy = false
+	end)
+	table.insert(self._connections, self._freezeConn)
+
+	-- Public API: lock any instance forever
+	function self:LockGeometry(obj: GuiObject)
+		freezeGui(obj, true)
+		return self
+	end
+	function self:UnlockGeometry(obj: GuiObject)
+		unfreezeGui(obj)
+		return self
+	end
+
 	return self
 end
 
@@ -19635,6 +19663,17 @@ end
 
 local function controlObject(library: any, card: Frame, key: string?, setter: (any, boolean?) -> (), getter: () -> any): Control
 	local okInitial, initialValue = pcall(getter)
+	-- Snapshot geometry AFTER control finished building
+	task.defer(function()
+		if card and card.Parent then
+			freezeGui(card, false)
+			for _, ch in ipairs(card:GetDescendants()) do
+				if ch:IsA("TextButton") or ch:IsA("ImageButton") or ch:IsA("TextBox") then
+					freezeGui(ch, false)
+				end
+			end
+		end
+	end)
 	local control: any = {
 		Frame = card,
 		Key = key,
@@ -19652,6 +19691,7 @@ local function controlObject(library: any, card: Frame, key: string?, setter: (a
 			end
 		end,
 		Destroy = function(_: any)
+			unfreezeGui(card)
 			if card.Parent then card:Destroy() end
 			if key then library._controls[key] = nil end
 		end,
@@ -20398,6 +20438,8 @@ end
 function Library:Destroy()
 	if self._destroyed then return end
 	self._destroyed = true
+	if self._freezeConn then pcall(function() self._freezeConn:Disconnect() end) end
+	table.clear(FreezeRegistry)
 	for _, connection in ipairs(self._connections) do
 		if connection.Connected then connection:Disconnect() end
 	end
@@ -20945,28 +20987,11 @@ function Library:Shake(object: GuiObject, distance: number?, duration: number?):
 	return tween
 end
 function Library:Hover(object: GuiObject, enter: Options, leave: Options?): self
-	-- INSTANT only — tween on hover is the #1 cause of "jumping buttons"
-	local enterProps = visualFeedback(enter or {})
-	local leaveProps = visualFeedback(leave or {})
-	self:_connect(object.MouseEnter, function()
-		if object.Parent then setProps(object, enterProps) end
-	end)
-	self:_connect(object.MouseLeave, function()
-		if object.Parent then setProps(object, leaveProps) end
-	end)
+	-- NO-OP: any hover visual was causing jump reports on some clients
 	return self
 end
 function Library:Press(object: GuiButton, pressed: Options, released: Options?): self
-	local pressProps = visualFeedback(pressed or {})
-	local releaseProps = visualFeedback(released or {})
-	self:_connect(object.InputBegan, function(input: InputObject)
-		if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
-		setProps(object, pressProps)
-	end)
-	self:_connect(object.InputEnded, function(input: InputObject)
-		if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
-		setProps(object, releaseProps)
-	end)
+	-- NO-OP: press feedback disabled (anti-jump)
 	return self
 end
 function Library:IsTouchDevice(): boolean
