@@ -52,10 +52,12 @@ local DEFAULT_THEME: Theme = {
 	Warning = Color3.fromRGB(255, 205, 119),
 }
 
+-- SAFE motion only (no Back/Spring bounce — bounce moves layout under cursor)
 local MOTION = {
-	Fast = TweenInfo.new(0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-	Smooth = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-	Spring = TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+	Fast = TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+	Smooth = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+	Spring = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), -- not real spring (avoid overshoot jump)
+	Fade = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
 }
 
 -- These are deliberately a mapping rather than an external icon package. A
@@ -18349,16 +18351,34 @@ local function stroked(parent: Instance, color: Color3, transparency: number?, t
 	}, parent)
 end
 
-local function play(object: Instance, properties: {[string]: any}, info: TweenInfo?): Tween?
-	if type(properties) ~= "table" or not object then return nil end
-	-- HARD block geometry — tweens on Size/Position under the cursor cause enter/leave loops
-	local safe: {[string]: any} = {}
-	for prop, value in pairs(properties) do
-		if prop ~= "Size" and prop ~= "Position" and prop ~= "AnchorPoint"
-			and prop ~= "Rotation" and prop ~= "CanvasSize" and prop ~= "AutomaticSize" then
-			safe[prop] = value
+--[[
+	Animation policy (anti-jump):
+	- Hover / Press / tab highlight → INSTANT color only (no tween)
+	- Open/close UI → CanvasGroup.GroupTransparency only
+	- play() → color/transparency ONLY (never Size/Position)
+	- playGeo() → Size/Position only for progress bars, explicit call sites
+]]
+local GEOMETRY_PROPS = {
+	Size = true, Position = true, AnchorPoint = true, Rotation = true,
+	CanvasSize = true, AutomaticSize = true, TextSize = true,
+	Text = true, Font = true, FontFace = true,
+}
+
+local function visualFeedback(properties: {[string]: any}): {[string]: any}
+	local result: {[string]: any} = {}
+	if type(properties) ~= "table" then return result end
+	for property, value in pairs(properties) do
+		if not GEOMETRY_PROPS[property] then
+			result[property] = value
 		end
 	end
+	return result
+end
+
+-- Safe tween: colors / transparency only
+local function play(object: Instance, properties: {[string]: any}, info: TweenInfo?): Tween?
+	if type(properties) ~= "table" or not object then return nil end
+	local safe = visualFeedback(properties)
 	if next(safe) == nil then return nil end
 	local ok, result = pcall(function()
 		local animation = TweenService:Create(object, info or MOTION.Smooth, safe)
@@ -18369,19 +18389,24 @@ local function play(object: Instance, properties: {[string]: any}, info: TweenIn
 	return nil
 end
 
-local function visualFeedback(properties: {[string]: any}): {[string]: any}
-	local result: {[string]: any} = {}
-	local blocked = {
-		Size = true, Position = true, AnchorPoint = true, Rotation = true,
-		TextSize = true, Text = true, Font = true, FontFace = true,
-		AutomaticSize = true, CanvasSize = true,
-	}
-	for property, value in pairs(properties) do
-		if not blocked[property] then
-			result[property] = value
-		end
+-- Explicit geometry tween (progress fill only — NEVER use on hover targets)
+local function playGeo(object: Instance, properties: {[string]: any}, info: TweenInfo?): Tween?
+	if type(properties) ~= "table" or not object then return nil end
+	local ok, result = pcall(function()
+		local animation = TweenService:Create(object, info or MOTION.Smooth, properties)
+		animation:Play()
+		return animation
+	end)
+	if ok then return result end
+	return nil
+end
+
+-- Instant set (hover-safe)
+local function setProps(object: Instance, properties: {[string]: any})
+	if type(properties) ~= "table" or not object then return end
+	for prop, value in pairs(visualFeedback(properties)) do
+		pcall(function() (object :: any)[prop] = value end)
 	end
-	return result
 end
 
 local function clamp(value: number, minimum: number, maximum: number): number
@@ -20308,7 +20333,7 @@ function Library:Notify(options: Options): Frame
 	if duration > 0 then
 		task.delay(duration, function()
 			if notification.Parent then
-				local animation = play(notification, {BackgroundTransparency = 1, Size = UDim2.fromOffset(294, 0)}, MOTION.Smooth)
+				local animation = play(notification, {BackgroundTransparency = 1}, MOTION.Smooth)
 				if animation then animation.Completed:Connect(function() if notification.Parent then notification:Destroy() end end) end
 			end
 		end)
@@ -20858,19 +20883,19 @@ function Library:_motionInfo(info: TweenInfo?): TweenInfo
 	)
 end
 function Library:Animate(object: Instance, properties: Options, info: TweenInfo?, key: string?): Tween?
-	if self._destroyed or not object.Parent then return nil end
+	if self._destroyed or not object or not object.Parent then return nil end
 	if type(properties) ~= "table" then return nil end
-	-- Never tween Size/Position on hover (prevents continuous control jump)
 	local allowGeo = type(key) == "string" and (string.sub(key, 1, 5) == "shake" or string.sub(key, 1, 3) == "geo")
-	if not allowGeo then
-		properties = visualFeedback(properties)
-	end
-	if next(properties) == nil then return nil end
 	if key and self._animations[key] then
 		pcall(function() self._animations[key]:Cancel() end)
 		self._animations[key] = nil
 	end
-	local tween = play(object, properties, self:_motionInfo(info))
+	local tween
+	if allowGeo then
+		tween = playGeo(object, properties, self:_motionInfo(info))
+	else
+		tween = play(object, visualFeedback(properties), self:_motionInfo(info))
+	end
 	if tween and key then
 		self._animations[key] = tween
 		self:TrackCleanup(function()
@@ -20920,20 +20945,14 @@ function Library:Shake(object: GuiObject, distance: number?, duration: number?):
 	return tween
 end
 function Library:Hover(object: GuiObject, enter: Options, leave: Options?): self
-	-- Instant property set only (no TweenService). Prevents continuous jump/jitter on hover.
+	-- INSTANT only — tween on hover is the #1 cause of "jumping buttons"
 	local enterProps = visualFeedback(enter or {})
 	local leaveProps = visualFeedback(leave or {})
 	self:_connect(object.MouseEnter, function()
-		if not object.Parent then return end
-		for prop, value in pairs(enterProps) do
-			pcall(function() (object :: any)[prop] = value end)
-		end
+		if object.Parent then setProps(object, enterProps) end
 	end)
 	self:_connect(object.MouseLeave, function()
-		if not object.Parent then return end
-		for prop, value in pairs(leaveProps) do
-			pcall(function() (object :: any)[prop] = value end)
-		end
+		if object.Parent then setProps(object, leaveProps) end
 	end)
 	return self
 end
@@ -20942,15 +20961,11 @@ function Library:Press(object: GuiButton, pressed: Options, released: Options?):
 	local releaseProps = visualFeedback(released or {})
 	self:_connect(object.InputBegan, function(input: InputObject)
 		if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
-		for prop, value in pairs(pressProps) do
-			pcall(function() (object :: any)[prop] = value end)
-		end
+		setProps(object, pressProps)
 	end)
 	self:_connect(object.InputEnded, function(input: InputObject)
 		if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
-		for prop, value in pairs(releaseProps) do
-			pcall(function() (object :: any)[prop] = value end)
-		end
+		setProps(object, releaseProps)
 	end)
 	return self
 end
@@ -21265,7 +21280,7 @@ function Library:OpenModal(options: Options): Frame
 	self._modalData[overlay] = {Dialog = dialog, Body = body}
 	overlay:SetAttribute("ModalTitle", options.Title or "Dialog")
 	self._activeModal = overlay
-	self:Animate(dialog, {Position = UDim2.fromScale(0.5, 0.5)}, MOTION.Spring)
+	dialog.Position = UDim2.fromScale(0.5, 0.5)
 	return overlay
 end
 function Library:Confirm(options: Options): Frame
@@ -21651,7 +21666,7 @@ function Library:AddProgress(options: Options): Control
 		local ratio = (value - minimum) / math.max(maximum - minimum, 0.0001)
 		valueLabel.Text = options.Format and string.format(options.Format, value) or string.format("%d%%", math.round(ratio * 100))
 		if animated then
-			self:Animate(fill, {Size = UDim2.fromScale(ratio, 1)}, MOTION.Smooth)
+			self:Animate(fill, {Size = UDim2.fromScale(ratio, 1)}, MOTION.Smooth, "geo_fill")
 		else
 			fill.Size = UDim2.fromScale(ratio, 1)
 		end
