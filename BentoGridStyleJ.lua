@@ -1,5 +1,5 @@
 --[[
-	KhfreshUI Executor UI Library — Bento Grid Style
+	KhfreshUI Executor UI Library — Bento Grid Style (stable layout)
 
 	This file is the UI payload for Roblox script executors. Load it with an
 	executor loader using game:HttpGet and loadstring, for example:
@@ -18410,103 +18410,15 @@ local function setProps(object: Instance, properties: {[string]: any})
 end
 
 -- ===== GEOMETRY FREEZE =====
-local FreezeRegistry: {[GuiObject]: {Size: UDim2, Position: UDim2, AnchorPoint: Vector2}} = {}
-local FreezeBusy = false
-local function snapshotGeo(obj: GuiObject)
-	return { Size = obj.Size, Position = obj.Position, AnchorPoint = obj.AnchorPoint }
-end
-local function freezeGui(obj: Instance?, _deep: boolean?)
-	-- DISABLED: Size/Position signal reverse + Heartbeat fight = continuous jump
-	return
-end
-local function unfreezeGui(obj: Instance?)
-	if obj and obj:IsA("GuiObject") then FreezeRegistry[obj] = nil end
-end
-local function refreezeGui(obj: GuiObject)
-	if not obj then return end
-	FreezeBusy = true
-	FreezeRegistry[obj] = snapshotGeo(obj)
-	FreezeBusy = false
-end
 
--- ===== KHFRESH HOVER (overlay only, never Size/Position) =====
-local hoverTransparencies: {[GuiObject]: number} = {}
-local hoverGenerations: {[GuiObject]: number} = {}
-local interactionTweens: {[Instance]: {[string]: any}} = {}
-
-local function animateChannel(object: Instance, channel: string, info: TweenInfo, properties: {[string]: any})
-	if not object then return nil end
-	local channels = interactionTweens[object]
-	if not channels then
-		channels = {}
-		interactionTweens[object] = channels
-	end
-	if channels[channel] then pcall(function() channels[channel]:Cancel() end) end
-	local ok, animation = pcall(function()
-		return TweenService:Create(object, info, properties)
-	end)
-	if not ok or not animation then return nil end
-	channels[channel] = animation
-	animation.Completed:Connect(function()
-		if channels[channel] == animation then channels[channel] = nil end
-	end)
-	animation:Play()
-	return animation
-end
-
-local function makeHoverLayer(parent: GuiObject, color: Color3?, radius: number?, transparency: number?): Frame
-	local existing = parent:FindFirstChild("HoverLayer")
-	if existing and existing:IsA("Frame") then return existing :: Frame end
-	local layer = Instance.new("Frame")
-	layer.Name = "HoverLayer"
-	layer.BackgroundColor3 = color or Color3.fromRGB(43, 49, 68)
-	layer.BackgroundTransparency = 1
-	layer.BorderSizePixel = 0
-	layer.Size = UDim2.fromScale(1, 1)
-	layer.Position = UDim2.fromScale(0, 0)
-	layer.Visible = false
-	layer.Active = false
-	layer.Selectable = false
-	layer.ClipsDescendants = true
-	-- not a layout sibling of section UIListLayout; inside card only
-	layer.ZIndex = (parent.ZIndex or 1) + 1
-	layer.Parent = parent
-	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(0, radius or 12)
-	corner.Parent = layer
-	hoverTransparencies[layer] = (transparency == nil) and 0.88 or transparency
-	hoverGenerations[layer] = 0
-	return layer
-end
-
-local function setHoverVisible(layer: Frame?, visible: boolean)
-	if not layer or not layer.Parent then return end
-	hoverGenerations[layer] = (hoverGenerations[layer] or 0) + 1
-	local generation = hoverGenerations[layer]
-	if visible then
-		layer.Visible = true
-		animateChannel(layer, "hover", MOTION.Fast, {
-			BackgroundTransparency = hoverTransparencies[layer] or 0.88,
-		})
-	else
-		local fade = animateChannel(layer, "hover", MOTION.Smooth, { BackgroundTransparency = 1 })
-		if fade then
-			fade.Completed:Connect(function()
-				if hoverGenerations[layer] == generation and layer.Parent then
-					layer.Visible = false
-				end
-			end)
-		end
-	end
-end
-
-local function bindKhfreshHover(hitTarget: GuiObject, layer: Frame?, onEnter: (() -> ())?, onLeave: (() -> ())?)
-	return
-end
-
-local function attachKhfreshHover(target: GuiObject, color: Color3?, radius: number?)
-	return nil
-end
+-- Interaction policy: ZERO MouseEnter visual, ZERO Size/Position tween, ZERO CanvasGroup on Window.
+local function freezeGui(...) end
+local function unfreezeGui(...) end
+local function refreezeGui(...) end
+local function makeHoverLayer(...) return nil end
+local function setHoverVisible(...) end
+local function bindKhfreshHover(...) end
+local function attachKhfreshHover(...) return nil end
 
 local function clamp(value: number, minimum: number, maximum: number): number
 	return math.max(minimum, math.min(maximum, value))
@@ -18767,7 +18679,6 @@ function Library:_setWindowPosition()
 end
 
 function Library:_updateHandlePositions()
-	-- Handles are parented under Window with relative UDim2 — no AbsolutePosition tracking
 end
 
 local function draggable(library: any, target: GuiObject, handle: GuiObject)
@@ -19238,7 +19149,7 @@ function Library.new(options: Options?): any
 			end
 		end)
 	end
-	-- floating toggle hover disabled
+	-- floating toggle: no hover
 	local camera = workspace.CurrentCamera
 	if camera then
 		self:_connect(camera:GetPropertyChangedSignal("ViewportSize"), function() self:_resize() end)
@@ -19247,101 +19158,18 @@ function Library.new(options: Options?): any
 	self._currentWidth = clamp(self._targetWidth, 320, math.max(320, viewport.X - 28))
 	self._currentHeight = clamp(self._targetHeight, 280, math.max(280, viewport.Y - 74))
 	self.Window.Size = UDim2.fromOffset(self._currentWidth, self._currentHeight)
-	-- Prepare CanvasGroup fade host (window + shadow live inside for GroupTransparency)
-	do
-		local fadeHost = Instance.new("CanvasGroup")
-		fadeHost.Name = "FadeHost"
-		fadeHost.BackgroundTransparency = 1
-		fadeHost.BorderSizePixel = 0
-		fadeHost.Size = UDim2.fromScale(1, 1)
-		fadeHost.GroupTransparency = 0
-		fadeHost.ZIndex = 1
-		fadeHost.Parent = self.Gui
-		self.Window.Parent = fadeHost
-		if self.WindowShadow then
-			self.WindowShadow.Parent = fadeHost
-			self.WindowShadow.ZIndex = 0
-		end
-		self._fadeHost = fadeHost
-	end
-	task.defer(function() self:_updateHandlePositions() end)
-
-	-- (no Heartbeat freeze — fighting layout caused continuous jump)
-
 	return self
 end
 
 function Library:SetVisible(visible: boolean)
 	if self._destroyed then return self end
-	if self._visible == visible then return self end
 	self._visible = visible == true
 	local window = self.Window
 	if not window then return self end
-
-	-- True whole-UI fade via CanvasGroup.GroupTransparency (children fade in AND out).
-	-- Never use UIScale here — scale under cursor causes control jump loops.
-	local gui = self.Gui
-	local fadeHost = self._fadeHost
-	if not fadeHost or not fadeHost.Parent then
-		fadeHost = Instance.new("CanvasGroup")
-		fadeHost.Name = "FadeHost"
-		fadeHost.BackgroundTransparency = 1
-		fadeHost.BorderSizePixel = 0
-		fadeHost.Size = UDim2.fromScale(1, 1)
-		fadeHost.GroupTransparency = 0
-		fadeHost.ZIndex = 1
-		if gui then fadeHost.Parent = gui end
-		window.Parent = fadeHost
-		if self.WindowShadow and self.WindowShadow.Parent then
-			self.WindowShadow.Parent = fadeHost
-			self.WindowShadow.ZIndex = 0
-		end
-		self._fadeHost = fadeHost
-	end
-
-	local leftover = window:FindFirstChild("WindowMotionScale")
-	if leftover then leftover:Destroy() end
-	window.BackgroundTransparency = 0
-
-	local fadeInfo = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-	local handles = { self.DragFooter, self.ResizeGrip }
-	self._fadeToken = (self._fadeToken or 0) + 1
-	local token = self._fadeToken
-
-	if self._visible then
-		-- FADE IN
-		window.Visible = true
-		window.Size = UDim2.fromOffset(self._currentWidth or self._targetWidth, self._currentHeight or self._targetHeight)
-		fadeHost.Visible = true
-		fadeHost.GroupTransparency = 1
-		for _, h in ipairs(handles) do
-			if h then h.Visible = true end
-		end
-		if self.WindowShadow then self.WindowShadow.Visible = true end
-		pcall(function()
-			local tw = TweenService:Create(fadeHost, fadeInfo, { GroupTransparency = 0 })
-			tw:Play()
-		end)
-		task.defer(function()
-			if token == self._fadeToken then self:_updateHandlePositions() end
-		end)
-	else
-		-- FADE OUT
-		fadeHost.GroupTransparency = 0
-		pcall(function()
-			local tw = TweenService:Create(fadeHost, fadeInfo, { GroupTransparency = 1 })
-			tw:Play()
-		end)
-		task.delay(0.22, function()
-			if self._destroyed or self._visible or token ~= self._fadeToken then return end
-			window.Visible = false
-			fadeHost.GroupTransparency = 0
-			for _, h in ipairs(handles) do
-				if h then h.Visible = false end
-			end
-			if self.WindowShadow then self.WindowShadow.Visible = false end
-		end)
-	end
+	window.Visible = self._visible
+	if self.WindowShadow then self.WindowShadow.Visible = self._visible end
+	if self.DragFooter then self.DragFooter.Visible = self._visible end
+	if self.ResizeGrip then self.ResizeGrip.Visible = self._visible end
 	return self
 end
 
@@ -19417,17 +19245,15 @@ function Library:AddTab(options: Options): any
 		Position = UDim2.fromOffset(16, 8),
 		Visible = false,
 	}, self._contentHost)
-	-- CRITICAL: Always reserve scrollbar space — prevents width oscillate → ALL controls jump
 	pcall(function()
 		page.ElasticBehavior = Enum.ElasticBehavior.Never
 		page.VerticalScrollBarInset = Enum.ScrollBarInset.Always
-		page.ScrollingEnabled = true
 	end)
 	page.Name = "Page_" .. tab.Name
 	make("UIPadding", {
 		PaddingBottom = UDim.new(0, 14),
 		PaddingTop = UDim.new(0, 4),
-		PaddingRight = UDim.new(0, 4),
+		PaddingRight = UDim.new(0, 10),
 		PaddingLeft = UDim.new(0, 2),
 	}, page)
 	local pageLayout = make("UIListLayout", {
@@ -19435,16 +19261,10 @@ function Library:AddTab(options: Options): any
 		SortOrder = Enum.SortOrder.LayoutOrder,
 	}, page)
 	-- Manual canvas size (no AutomaticCanvasSize jitter while hovering controls)
-	local lastCanvasY = 0
 	local function refreshCanvas()
 		task.defer(function()
 			if not page.Parent then return end
-			local y = math.ceil(pageLayout.AbsoluteContentSize.Y + 28)
-			-- Never shrink canvas on micro reflow (stops scrollbar flash loop)
-			if y < lastCanvasY and (lastCanvasY - y) < 40 then
-				y = lastCanvasY
-			end
-			lastCanvasY = y
+			local y = pageLayout.AbsoluteContentSize.Y + 24
 			page.CanvasSize = UDim2.fromOffset(0, math.max(y, 0))
 		end)
 	end
@@ -19455,12 +19275,19 @@ function Library:AddTab(options: Options): any
 	tab.Layout = pageLayout
 	table.insert(self._tabs, tab)
 	self:_connect(button.Activated, function() self:SelectTab(tab) end)
-	do
-		local tabHover = makeHoverLayer(button, self.Theme.Surface3, 12, 0.85)
-		bindKhfreshHover(button, tabHover, nil, nil)
-	end
+	-- no tab hover
 	self._tabsBar.Visible = #self._tabs > 0
-	-- Do NOT resize contentHost on every AddTab (global reflow jumps every control)
+	self._contentTop = 78
+	local left = self._contentLeft or 198
+	self._contentHost.Position = UDim2.fromOffset(left, self._contentTop)
+	self._contentHost.Size = UDim2.new(1, -(left + 16), 1, -92)
+	if self._sideDivider then
+		self._sideDivider.Position = UDim2.fromOffset(left - 8, self._contentTop)
+		self._sideDivider.Size = UDim2.new(0, 1, 1, -92)
+	end
+	if self._tabsBar then
+		self._tabsBar.Size = UDim2.new(0, self._railWidth or 168, 1, -92)
+	end
 	if options.Hidden ~= true or #self._tabs == 1 then
 		self:SelectTab(tab)
 	end
@@ -19526,18 +19353,7 @@ function Library:_card(options: Options, height: number?): Frame
 		if not options.BackgroundColor then self:_theme(card, "BackgroundColor3", "Surface2") end
 		rounded(card, options.Radius or 12)
 	end
-	task.defer(function()
-		if card and card.Parent then
-			attachKhfreshHover(card, self.Theme and self.Theme.Surface3, options.Radius or 16)
-			freezeGui(card, false)
-			for _, ch in ipairs(card:GetChildren()) do
-				if ch:IsA("TextButton") or ch:IsA("ImageButton") then
-					freezeGui(ch, false)
-				end
-			end
-		end
-	end)
-	return card
+		return card
 end
 
 function Library:_heading(card: Frame, options: Options, y: number?, showDescription: boolean?): (TextLabel, TextLabel?)
@@ -19657,34 +19473,32 @@ function Library:_makeSection(tab: any, options: Options): any
 	}, frame)
 	make("UIListLayout", {Padding = UDim.new(0, 10), SortOrder = Enum.SortOrder.LayoutOrder}, section.Content)
 	table.insert(tab._sections, section)
-	-- Fixed growth: set height once when children added; NEVER listen AbsoluteContentSize
+	-- One-shot height measure only when children change (no AbsoluteContentSize signal = no jump loop)
 	section.Content.Size = UDim2.new(1, 0, 0, 0)
-	local topPad = options.Title and 35 or 0
-	section.Frame.Size = UDim2.new(1, 0, 0, topPad)
-	local function bumpHeight()
-		task.defer(function()
-			if not section.Frame.Parent then return end
-			local h = topPad
+	local function measureOnce()
+		local layout = section.Content:FindFirstChildOfClass("UIListLayout")
+		local contentH = 0
+		if layout then
+			contentH = layout.AbsoluteContentSize.Y
+		else
 			for _, ch in ipairs(section.Content:GetChildren()) do
-				if ch:IsA("GuiObject") and ch.Visible and not ch:IsA("UIListLayout") and not ch:IsA("UIPadding") then
-					h += (ch.Size.Y.Offset > 0 and ch.Size.Y.Offset or 76) + 10
+				if ch:IsA("GuiObject") and ch.Visible then
+					contentH += ch.AbsoluteSize.Y + 10
 				end
 			end
-			section.Content.Size = UDim2.new(1, 0, 0, math.max(0, h - topPad))
-			section.Frame.Size = UDim2.new(1, 0, 0, math.max(topPad + 8, h))
-			-- Refresh page canvas once
-			local page = section.Frame.Parent
-			if page and page:IsA("ScrollingFrame") then
-				local lay = page:FindFirstChildOfClass("UIListLayout")
-				if lay then
-					page.CanvasSize = UDim2.fromOffset(0, lay.AbsoluteContentSize.Y + 24)
-				end
-			end
-		end)
+		end
+		local top = options.Title and 35 or 0
+		local h = math.max(top + 8, math.ceil(contentH + top + 4))
+		section.Content.Size = UDim2.new(1, 0, 0, math.max(0, h - top))
+		section.Frame.Size = UDim2.new(1, 0, 0, h)
 	end
-	self:_connect(section.Content.ChildAdded, bumpHeight)
-	self:_connect(section.Content.ChildRemoved, bumpHeight)
-	task.defer(bumpHeight)
+	self:_connect(section.Content.ChildAdded, function()
+		task.defer(measureOnce)
+	end)
+	self:_connect(section.Content.ChildRemoved, function()
+		task.defer(measureOnce)
+	end)
+	task.defer(measureOnce)
 	return section
 end
 
@@ -20032,8 +19846,7 @@ function Library:AddDropdown(options: Options): Control
 		self:_theme(item, "BackgroundColor3", "Surface3")
 		self:_theme(item, "TextColor3", "Muted")
 		make("UIPadding", {PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8)}, item)
-		-- dropdown item hover disabled
-		self:_connect(item.Activated, function()
+				self:_connect(item.Activated, function()
 			set(candidate, false)
 			setOpen(false)
 		end)
@@ -20483,7 +20296,7 @@ end
 function Library:Destroy()
 	if self._destroyed then return end
 	self._destroyed = true
-		for _, connection in ipairs(self._connections) do
+			for _, connection in ipairs(self._connections) do
 		if connection.Connected then connection:Disconnect() end
 	end
 	table.clear(self._connections)
@@ -21033,7 +20846,6 @@ function Library:Hover(object: GuiObject, enter: Options, leave: Options?): self
 	return self
 end
 function Library:Press(object: GuiButton, pressed: Options, released: Options?): self
-	-- No UIScale / Size / Position — hover uses HoverLayer only
 	return self
 end
 function Library:IsTouchDevice(): boolean
@@ -21462,10 +21274,17 @@ local function makeSectionIn(library: any, parent: Instance, tab: any, options: 
 		Size = UDim2.new(1, 0, 1, -top),
 	}, frame)
 	make("UIListLayout", {Padding = UDim.new(0, 10), SortOrder = Enum.SortOrder.LayoutOrder}, section.Content)
-	frame.AutomaticSize = Enum.AutomaticSize.Y
-	section.Content.AutomaticSize = Enum.AutomaticSize.Y
 	section.Content.Size = UDim2.new(1, 0, 0, 0)
-	frame.Size = UDim2.new(1, 0, 0, top)
+	local function measureOnce()
+		local layout = section.Content:FindFirstChildOfClass("UIListLayout")
+		local contentH = layout and layout.AbsoluteContentSize.Y or 0
+		local h = math.max(top + 8, math.ceil(contentH + top + 4))
+		section.Content.Size = UDim2.new(1, 0, 0, math.max(0, h - top))
+		frame.Size = UDim2.new(1, 0, 0, h)
+	end
+	library:_connect(section.Content.ChildAdded, function() task.defer(measureOnce) end)
+	library:_connect(section.Content.ChildRemoved, function() task.defer(measureOnce) end)
+	task.defer(measureOnce)
 	return section
 end
 function Section:AddSection(options: Options): any
