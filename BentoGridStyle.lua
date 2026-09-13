@@ -14,8 +14,8 @@
 		ReplicatedStorage, filesystem API, or a second HTTP request.
 ]]
 
-local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
 local Library = {}
@@ -18336,7 +18336,6 @@ local function make<T>(className: string, properties: {[string]: any}, parent: I
 	-- the library and the stable build intentionally keeps geometry static.
 	if object:IsA("GuiButton") then
 		object.AutoButtonColor = false
-		pcall(function() object.Selectable = false end)
 	end
 	for property, value in pairs(properties) do
 		pcall(function() (object :: any)[property] = value end)
@@ -18363,10 +18362,10 @@ end
 
 --[[
 	Animation policy (anti-jump):
-	- Hover / Press / tab highlight -> no geometry mutation
-	- Open/close UI -> direct visibility state
-	- play() -> visual properties only (never Size/Position)
-	- playGeo() -> visual properties only; layout geometry is assigned explicitly
+	- Hover / Press / tab highlight → INSTANT color only (no tween)
+	- Open/close UI → CanvasGroup.GroupTransparency only
+	- play() → color/transparency ONLY (never Size/Position)
+	- playGeo() → internal progress bars only; hover/focus never changes geometry
 ]]
 local GEOMETRY_PROPS = {
 	Size = true, Position = true, AnchorPoint = true, Rotation = true,
@@ -18397,13 +18396,9 @@ local function play(object: Instance, properties: {[string]: any}, _info: TweenI
 end
 
 local function playGeo(object: Instance, properties: {[string]: any}, _info: TweenInfo?): Tween?
-	-- Geometry mutation is intentionally disabled for interaction safety.
-	-- Internal layout code writes geometry directly where needed.
 	if type(properties) ~= "table" or not object then return nil end
 	for property, value in pairs(properties) do
-		if not GEOMETRY_PROPS[property] then
-			pcall(function() (object :: any)[property] = value end)
-		end
+		pcall(function() (object :: any)[property] = value end)
 	end
 	return nil
 end
@@ -18456,40 +18451,51 @@ local function invoke(callback: any, ...: any)
 	end
 end
 
--- Pure primitive Khfresh K logo. No logo image and no external logo asset.
-local function makeLogo(parent: Instance, _value: string, color: Color3): Frame
-	local holder = make("Frame", {
-		Name = "AlgorithmicLogo",
-		BackgroundColor3 = DEFAULT_THEME.Surface3,
-		BorderSizePixel = 0,
-		Size = UDim2.fromOffset(38, 38),
-	}, parent)
-	rounded(holder, 12)
-	stroked(holder, DEFAULT_THEME.Stroke, 0.15)
-	local primary = color or Color3.fromRGB(238, 239, 243)
-	local secondary = Color3.fromRGB(145, 148, 158)
-	local function segment(name: string, position: UDim2, size: UDim2, rotation: number, tint: Color3)
-		local part = make("Frame", {
-			Name = "KhfreshK_" .. name,
-			BackgroundColor3 = tint,
-			BorderSizePixel = 0,
-			Position = position,
-			Size = size,
-			Rotation = rotation,
-			ZIndex = 4,
-		}, holder)
-		rounded(part, 2)
+local function seedFor(value: string): number
+	local seed = 17
+	for index = 1, #value do
+		seed = (seed * 31 + string.byte(value, index)) % 2147483647
 	end
-	segment("Stem", UDim2.fromOffset(9, 7), UDim2.fromOffset(4, 24), 0, primary)
-	segment("Upper", UDim2.fromOffset(12, 15), UDim2.fromOffset(20, 4), -39, secondary)
-	segment("Lower", UDim2.fromOffset(12, 19), UDim2.fromOffset(20, 4), 39, primary)
+	return seed
+end
+
+local function makeLogo(parent: Instance, _value: string, color: Color3): Frame
+	-- One transparent K. No image asset, no random pixels, no second logo layer.
+	local holder = make("Frame", {
+		Name = "AlgorithmicKLogo",
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Size = UDim2.fromOffset(40, 40),
+	}, parent)
+	local function bar(name, pos, size, rotation, alpha)
+		local f = make("Frame", {
+			Name = name,
+			BackgroundColor3 = color,
+			BackgroundTransparency = alpha or 0,
+			BorderSizePixel = 0,
+			Position = pos,
+			Size = size,
+			Rotation = rotation or 0,
+			ZIndex = 3,
+		}, holder)
+		return f
+	end
+	bar("KStem", UDim2.fromOffset(6, 4), UDim2.fromOffset(5, 32), 0, 0)
+	bar("KUpper", UDim2.fromOffset(18, 8), UDim2.fromOffset(5, 19), 45, 0.04)
+	bar("KLower", UDim2.fromOffset(18, 23), UDim2.fromOffset(5, 19), -45, 0.04)
 	return holder
 end
 
-local function icon(parent: Instance?, name: string, size: number, color: Color3, assets: {[string]: any}?, resolved: any?): GuiObject
+local function icon(local function icon(parent: Instance?, name: string, size: number, color: Color3, assets: {[string]: any}?, resolved: any?): GuiObject
 	local asset = resolved
+	if type(asset) == "table" and asset.Asset ~= nil then asset = asset.Asset end
 	if asset == nil then asset = select(1, resolveIconAsset(name, assets, nil)) end
 	if asset ~= nil and asset ~= "" then
+		if type(asset) == "string" and not string.find(asset, "rbxassetid://", 1, true) and not string.match(asset, "^[%s%p%w]*$", 1) then
+			asset = nil
+		end
+	end
+	if asset ~= nil and asset ~= "" and not (type(asset) == "string" and #asset <= 3 and not string.find(asset, "rbxassetid://", 1, true)) then
 		local properties: {[string]: any} = {
 			Name = "Icon_" .. string.gsub(tostring(name), "[^%w_]", "_"),
 			BackgroundTransparency = 1,
@@ -18511,14 +18517,17 @@ local function icon(parent: Instance?, name: string, size: number, color: Color3
 		end
 		return make("ImageLabel", properties, parent)
 	end
+	local glyph = (LUCIDE_FALLBACK and (LUCIDE_FALLBACK[name] or LUCIDE_FALLBACK[normalizeIconToken(name)])) or "•"
 	return make("TextLabel", {
 		Name = "IconFallback_" .. string.gsub(tostring(name), "[^%w_]", "_"),
 		BackgroundTransparency = 1,
 		Font = Enum.Font.GothamMedium,
-		Text = findIconAsset(LUCIDE_FALLBACK, name) or "•",
+		Text = glyph,
 		TextColor3 = color,
 		TextSize = size,
 		Size = UDim2.fromOffset(size, size),
+		TextXAlignment = Enum.TextXAlignment.Center,
+		TextYAlignment = Enum.TextYAlignment.Center,
 	}, parent)
 end
 
@@ -18599,17 +18608,31 @@ function Library:_resolveIcon(name: string, pack: string?): (any, string?, strin
 	local cached = self._iconResolutionCache[cacheKey]
 	if cached then return cached.Asset, cached.Pack, cached.Name end
 	local asset, resolvedPack, cleanName = resolveIconAsset(name, self.IconAssets, requestedPack)
-	-- Explicit pack is preferred, but a missing icon must never leave a blank slot.
-	-- Fall back through the rest of BentoGridStyle's built-in packs automatically.
+	-- Explicit/preferred pack is only the first choice. Always try every embedded
+	-- pack before giving up, so every control can still receive an icon.
 	if asset == nil then
-		asset, resolvedPack, cleanName = resolveIconAsset(name, self.IconAssets, nil)
+		for _, candidate in ipairs(ICON_PACK_ORDER) do
+			if candidate ~= requestedPack then
+				local a, p, n = resolveIconAsset(cleanName or name, self.IconAssets, candidate)
+				if a ~= nil then asset, resolvedPack, cleanName = a, p, n break end
+			end
+		end
+	end
+	if asset == nil then
+		asset, resolvedPack, cleanName = resolveIconAsset(cleanName or name, self.IconAssets, nil)
+	end
+	if asset == nil then
+		-- Last-resort glyph is still an icon, never a blank control.
+		cleanName = cleanName or tostring(name or "circle")
+		asset = LUCIDE_FALLBACK[cleanName] or "•"
+		resolvedPack = "glyph"
 	end
 	local result = {Asset = asset, Pack = resolvedPack, Name = cleanName}
 	self._iconResolutionCache[cacheKey] = result
 	return asset, resolvedPack, cleanName
 end
 
-function Library:_clearIconCache()
+function Library:_clearIconCachefunction Library:_clearIconCache()
 	table.clear(self._iconResolutionCache)
 end
 
@@ -18667,7 +18690,6 @@ function Library:_resize()
 	if self.Window.Visible then
 		self.Window.Size = UDim2.fromOffset(width, height)
 	end
-	self:_updateHandlePositions()
 end
 
 function Library:_setWindowPosition()
@@ -18683,18 +18705,7 @@ function Library:_setWindowPosition()
 end
 
 function Library:_updateHandlePositions()
-	if not self.Window or not self.Window.Parent then return end
-	local pos = self.Window.AbsolutePosition
-	local size = self.Window.AbsoluteSize
-	if self.DragFooter and self.DragFooter.Parent then
-		local fw = self.DragFooter.AbsoluteSize.X
-		if fw < 1 then fw = 230 end
-		self.DragFooter.Position = UDim2.fromOffset(
-			math.floor(pos.X + size.X * 0.5 - fw * 0.5),
-			math.floor(pos.Y + size.Y + 8)
-		)
-	end
-	-- ResizeGrip is a child of Window; moving the window automatically moves it.
+	-- Kept for API compatibility. Native grip is anchored inside Window; no feedback loop.
 end
 
 local function draggable(library: any, target: GuiObject, handle: GuiObject)
@@ -18702,28 +18713,32 @@ local function draggable(library: any, target: GuiObject, handle: GuiObject)
 	local startInput: Vector3? = nil
 	local startPosition: UDim2? = nil
 	library:_connect(handle.InputBegan, function(input: InputObject)
-		if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
+		if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then
+			return
+		end
 		dragging = true
 		startInput = input.Position
 		startPosition = target.Position
-	end)
-	library:_connect(UserInputService.InputEnded, function(input: InputObject)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			dragging = false; startInput = nil; startPosition = nil
-		end
+		library:_connect(input.Changed, function()
+			if input.UserInputState == Enum.UserInputState.End then
+				dragging = false
+			end
+		end)
 	end)
 	library:_connect(UserInputService.InputChanged, function(input: InputObject)
-		if not dragging or not startInput or not startPosition or library._destroyed then return end
-		if input.UserInputType ~= Enum.UserInputType.MouseMovement and input.UserInputType ~= Enum.UserInputType.Touch then return end
+		if not dragging or not startInput or not startPosition then
+			return
+		end
+		if input.UserInputType ~= Enum.UserInputType.MouseMovement and input.UserInputType ~= Enum.UserInputType.Touch then
+			return
+		end
 		local delta = input.Position - startInput
-		if math.abs(delta.X) + math.abs(delta.Y) < 1 then return end
-		local viewport = library:GetViewport()
-		local size = target.AbsoluteSize
-		local margin = 8
-		local x = clamp(startPosition.X.Offset + delta.X, margin - viewport.X, viewport.X - size.X - margin)
-		local y = clamp(startPosition.Y.Offset + delta.Y, margin, viewport.Y - size.Y - margin)
-		target.Position = UDim2.new(startPosition.X.Scale, x, startPosition.Y.Scale, y)
-		-- Handle is parented to the window in the stable build, so no feedback repositioning is needed.
+		target.Position = UDim2.new(
+			startPosition.X.Scale, startPosition.X.Offset + delta.X,
+			startPosition.Y.Scale, startPosition.Y.Offset + delta.Y
+		)
+		library:_setWindowPosition()
+		library:_updateHandlePositions()
 	end)
 end
 
@@ -18734,32 +18749,40 @@ local function resizable(library: any, target: GuiObject, handle: GuiObject)
 	local startHeight = 0
 	library:_connect(handle.InputBegan, function(input: InputObject)
 		if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
+		if resizing then return end
 		resizing = true
 		startInput = input.Position
 		startWidth = target.AbsoluteSize.X
 		startHeight = target.AbsoluteSize.Y
-	end)
-	library:_connect(UserInputService.InputEnded, function(input: InputObject)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			resizing = false; startInput = nil
-		end
+		library:_connect(input.Changed, function()
+			if input.UserInputState == Enum.UserInputState.End then
+				resizing = false
+				startInput = nil
+			end
+		end)
 	end)
 	library:_connect(UserInputService.InputChanged, function(input: InputObject)
-		if not resizing or not startInput or library._destroyed then return end
+		if not resizing or not startInput or not target.Parent then return end
 		if input.UserInputType ~= Enum.UserInputType.MouseMovement and input.UserInputType ~= Enum.UserInputType.Touch then return end
 		local delta = input.Position - startInput
-		if math.abs(delta.X) + math.abs(delta.Y) < 1 then return end
-		local viewport = library:GetViewport()
-		local maxW = math.max(520, viewport.X - 28)
-		local maxH = math.max(360, viewport.Y - 74)
-		local newW = clamp(startWidth + delta.X, 520, math.min(1100, maxW))
-		local newH = clamp(startHeight + delta.Y, 360, math.min(760, maxH))
-		-- Golden-ratio-ish desktop window: prevent accidental one-axis micro-jitter while resizing.
-		if math.abs(delta.X) < 2 then newW = startWidth end
-		if math.abs(delta.Y) < 2 then newH = startHeight end
-		library._targetWidth = newW
-		library._targetHeight = newH
-		library:_resize()
+		local camera = workspace.CurrentCamera
+		local viewport = camera and camera.ViewportSize or Vector2.new(1280, 720)
+		local maxW = math.max(560, viewport.X - 36)
+		local maxH = math.max(400, viewport.Y - 36)
+		local w = clamp(startWidth + delta.X, 700, math.min(1100, maxW))
+		local h = clamp(startHeight + delta.Y, 500, math.min(820, maxH))
+		-- Keep a stable desktop ratio while still allowing genuine user resizing.
+		-- The ratio is soft: width controls height unless the cursor strongly changes it.
+		if math.abs(delta.X) > math.abs(delta.Y) * 1.35 then
+			h = clamp(w / 1.38, 500, math.min(820, maxH))
+		elseif math.abs(delta.Y) > math.abs(delta.X) * 1.35 then
+			w = clamp(h * 1.38, 700, math.min(1100, maxW))
+		end
+		library._targetWidth = w
+		library._targetHeight = h
+		library._currentWidth = w
+		library._currentHeight = h
+		target.Size = UDim2.fromOffset(math.floor(w), math.floor(h))
 	end)
 end
 
@@ -18770,15 +18793,7 @@ function Library.new(options: Options?): any
 	-- windows/floating buttons remain active and can make the UI appear to jump when the
 	-- cursor crosses their overlapping hitboxes.
 	local targetGuiName = tostring(config.Name or "KhfreshUI")
-	local staleNames = {
-		[targetGuiName] = true,
-		KhfreshUI = true,
-		KhfreshBentoUI = true,
-		KhfreshHub = true,
-		KhfreshHub_Lucide_Final = true,
-		KhfreshHub_Integrated = true,
-		KhfreshFloatingGui = true,
-	}
+	local staleNames = { [targetGuiName] = true, KhfreshUI = true, KhfreshBentoUI = true, KhfreshFloatingGui = true }
 	pcall(function()
 		for _, child in ipairs(player:WaitForChild("PlayerGui"):GetChildren()) do
 			if staleNames[child.Name] then child:Destroy() end
@@ -18820,8 +18835,8 @@ function Library.new(options: Options?): any
 	self._visible = true
 	self._destroyed = false
 	self._title = config.Title or "Bento"
-	self._targetWidth = config.Width or 780
-	self._targetHeight = config.Height or 480
+	self._targetWidth = config.Width or 900
+	self._targetHeight = config.Height or 650
 	self._currentWidth = self._targetWidth
 	self._currentHeight = self._targetHeight
 	self.Theme = copyTheme(config.Theme)
@@ -18866,7 +18881,6 @@ function Library.new(options: Options?): any
 		Size = UDim2.fromOffset(56, 56),
 		Text = "",
 		ZIndex = 30,
-		Selectable = false,
 	}, gui)
 	rounded(toggle, 18)
 	stroked(toggle, self.Theme.Stroke, 0.05)
@@ -18903,6 +18917,13 @@ function Library.new(options: Options?): any
 	stroked(window, self.Theme.Stroke, 0.16)
 	self:_theme(window, "BackgroundColor3", "Background")
 	self.Window = window
+	pcall(function()
+		for _, d in ipairs(window:GetDescendants()) do
+			if d.Name == "HubLogoImage" or d.Name == "KhfreshBackground" or d:IsA("ImageButton") and d.Name == "Logo" then
+				d:Destroy()
+			end
+		end
+	end)
 
 	-- No external drop shadow: it drifts independently of the window and looks detached.
 	self.WindowShadow = nil
@@ -19027,33 +19048,9 @@ function Library.new(options: Options?): any
 	self._railWidth = 168
 	self._contentLeft = 198
 
-	local dragFooter = make("TextButton", {
-		Active = true,
-		AutoButtonColor = false,
-		BackgroundTransparency = 1,
-		BorderSizePixel = 0,
-		Name = "DragFooter",
-		Position = UDim2.fromOffset(0, 0),
-		Size = UDim2.fromOffset(230, 26),
-		Text = "",
-		TextTransparency = 1,
-		ZIndex = 15,
-	}, gui)
-	local dragPill = make("Frame", {
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		BackgroundColor3 = Color3.fromRGB(205, 207, 214),
-		BorderSizePixel = 0,
-		Name = "DragPill",
-		Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.fromOffset(150, 5),
-		ZIndex = 16,
-	}, dragFooter)
-	rounded(dragPill, 3)
-	self:_theme(dragPill, "BackgroundColor3", "Text")
-	draggable(self, window, dragFooter)
-	self.DragFooter = dragFooter
-	self.DragPill = dragPill
-
+	-- Stable resize: the grip lives INSIDE Window and is anchored to its bottom-right.
+	-- There is no second GUI that follows AbsolutePosition/AbsoluteSize, so resize cannot
+	-- feed its own position back into layout and cause the jump/resize loop.
 	local resizeGrip = make("TextButton", {
 		Active = true,
 		AutoButtonColor = false,
@@ -19061,45 +19058,33 @@ function Library.new(options: Options?): any
 		BorderSizePixel = 0,
 		Name = "ResizeGrip",
 		AnchorPoint = Vector2.new(1, 1),
-		Position = UDim2.new(1, 0, 1, 0),
-		Size = UDim2.fromOffset(34, 34),
+		Position = UDim2.new(1, -6, 1, -6),
+		Size = UDim2.fromOffset(44, 40),
 		Text = "",
 		TextTransparency = 1,
-		ZIndex = 50,
+		ZIndex = 40,
 	}, window)
 	local gripBarA = make("Frame", {
-		AnchorPoint = Vector2.new(1, 1),
-		BackgroundColor3 = Color3.fromRGB(155, 157, 165),
-		BorderSizePixel = 0,
-		Position = UDim2.new(1, -7, 1, -8),
-		Rotation = -45,
-		Size = UDim2.fromOffset(16, 2),
-		ZIndex = 51,
+		AnchorPoint = Vector2.new(1, 1), BackgroundColor3 = Color3.fromRGB(155,157,165),
+		BorderSizePixel = 0, Position = UDim2.new(1, -8, 1, -9), Rotation = -45,
+		Size = UDim2.fromOffset(18, 2), ZIndex = 41,
 	}, resizeGrip)
 	local gripBarB = make("Frame", {
-		AnchorPoint = Vector2.new(1, 1),
-		BackgroundColor3 = Color3.fromRGB(155, 157, 165),
-		BorderSizePixel = 0,
-		Position = UDim2.new(1, -7, 1, -13),
-		Rotation = -45,
-		Size = UDim2.fromOffset(11, 2),
-		ZIndex = 51,
+		AnchorPoint = Vector2.new(1, 1), BackgroundColor3 = Color3.fromRGB(155,157,165),
+		BorderSizePixel = 0, Position = UDim2.new(1, -8, 1, -15), Rotation = -45,
+		Size = UDim2.fromOffset(12, 2), ZIndex = 41,
 	}, resizeGrip)
 	local gripBarC = make("Frame", {
-		AnchorPoint = Vector2.new(1, 1),
-		BackgroundColor3 = Color3.fromRGB(155, 157, 165),
-		BorderSizePixel = 0,
-		Position = UDim2.new(1, -7, 1, -18),
-		Rotation = -45,
-		Size = UDim2.fromOffset(6, 2),
-		ZIndex = 51,
+		AnchorPoint = Vector2.new(1, 1), BackgroundColor3 = Color3.fromRGB(155,157,165),
+		BorderSizePixel = 0, Position = UDim2.new(1, -8, 1, -21), Rotation = -45,
+		Size = UDim2.fromOffset(6, 2), ZIndex = 41,
 	}, resizeGrip)
 	self:_theme(gripBarA, "BackgroundColor3", "Muted")
 	self:_theme(gripBarB, "BackgroundColor3", "Muted")
 	self:_theme(gripBarC, "BackgroundColor3", "Muted")
 	resizable(self, window, resizeGrip)
 	self.ResizeGrip = resizeGrip
-	task.defer(function() self:_updateHandlePositions() end)
+	self.DragFooter = nil
 
 	local notifications = make("Frame", {
 		AnchorPoint = Vector2.new(1, 0),
@@ -19163,59 +19148,61 @@ function Library.new(options: Options?): any
 		self:_connect(camera:GetPropertyChangedSignal("ViewportSize"), function() self:_resize() end)
 	end
 	local viewport = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(900, 650)
-	self._currentWidth = clamp(self._targetWidth, 320, math.max(320, viewport.X - 28))
-	self._currentHeight = clamp(self._targetHeight, 280, math.max(280, viewport.Y - 74))
+	self._currentWidth = clamp(self._targetWidth, 700, math.max(700, viewport.X - 36))
+	self._currentHeight = clamp(self._targetHeight, 500, math.max(500, viewport.Y - 36))
 	self.Window.Size = UDim2.fromOffset(self._currentWidth, self._currentHeight)
-	-- Activate the responsive watcher once, so the same library behaves consistently on PC and mobile.
-	pcall(function() self:WatchViewport() end)
 	return self
 end
 
 function Library:SetVisible(visible: boolean)
 	if self._destroyed then return self end
-	local targetVisible = visible == true
+	visible = visible == true
+	if visible == self._visible and not self._fadeBusy then return self end
+	self._visible = visible
 	local window = self.Window
 	if not window then return self end
 	self._fadeToken = (self._fadeToken or 0) + 1
 	local token = self._fadeToken
-	self._visible = targetVisible
-	if targetVisible then
-		window.Visible = true
-		if self.DragFooter then self.DragFooter.Visible = true end
-		if self.ResizeGrip then self.ResizeGrip.Visible = true end
-		local overlay = make("Frame", {
-			BackgroundColor3 = self.Theme.Background,
-			BackgroundTransparency = 0,
-			BorderSizePixel = 0,
-			Size = UDim2.fromScale(1,1),
-			ZIndex = 120,
-		}, window)
-		self._fadeOverlay = overlay
-		local tw = TweenService:Create(overlay, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 1})
-		tw:Play()
-		tw.Completed:Connect(function()
-			if token ~= self._fadeToken then return end
-			if overlay.Parent then overlay:Destroy() end
-			if self._fadeOverlay == overlay then self._fadeOverlay = nil end
-		end)
-	else
-		local overlay = make("Frame", {
+	local fade = self._fadeLayer
+	if not fade or not fade.Parent then
+		fade = make("Frame", {
 			BackgroundColor3 = self.Theme.Background,
 			BackgroundTransparency = 1,
 			BorderSizePixel = 0,
-			Size = UDim2.fromScale(1,1),
-			ZIndex = 120,
+			Size = UDim2.fromScale(1, 1),
+			ZIndex = 1000,
 		}, window)
-		self._fadeOverlay = overlay
-		local tw = TweenService:Create(overlay, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0})
-		tw:Play()
-		tw.Completed:Connect(function()
-			if token ~= self._fadeToken then return end
-			if window.Parent then window.Visible = false end
-			if self.DragFooter then self.DragFooter.Visible = false end
-			if self.ResizeGrip then self.ResizeGrip.Visible = false end
-			if overlay.Parent then overlay:Destroy() end
-			if self._fadeOverlay == overlay then self._fadeOverlay = nil end
+		self._fadeLayer = fade
+	end
+	if visible then
+		window.Visible = true
+		fade.Visible = true
+		fade.BackgroundTransparency = 0
+		self._fadeBusy = true
+		task.spawn(function()
+			task.wait(0.02)
+			if token ~= self._fadeToken or not fade.Parent then return end
+			local t = TweenService:Create(fade, MOTION.Fade, {BackgroundTransparency = 1})
+			t:Play()
+			t.Completed:Wait()
+			if token == self._fadeToken and fade.Parent then fade.Visible = false end
+			self._fadeBusy = false
+		end)
+	else
+		fade.Visible = true
+		fade.BackgroundTransparency = 1
+		self._fadeBusy = true
+		task.spawn(function()
+			if token ~= self._fadeToken or not fade.Parent then return end
+			local t = TweenService:Create(fade, MOTION.Fade, {BackgroundTransparency = 0})
+			t:Play()
+			t.Completed:Wait()
+			if token == self._fadeToken and window.Parent then
+				window.Visible = false
+				fade.BackgroundTransparency = 1
+				fade.Visible = false
+			end
+			self._fadeBusy = false
 		end)
 	end
 	return self
@@ -19247,7 +19234,7 @@ function Library:AddTab(options: Options): any
 	local tab = setmetatable({}, Tab)
 	tab.Library = self
 	tab.Name = options.Name or ("Tab" .. tostring(#self._tabs + 1))
-	tab.IconName = options.Icon or options.IconName or __bentoInferIcon(options.Name, "layout-dashboard")
+	tab.IconName = options.Icon or "LayoutDashboard"
 	tab.LayoutOrder = options.LayoutOrder or #self._tabs + 1
 	tab._selected = false
 	tab._controls = {}
@@ -19261,15 +19248,12 @@ function Library:AddTab(options: Options): any
 		Size = UDim2.new(1, -4, 0, 40),
 		Text = "",
 		TextTransparency = 1,
-		Selectable = false,
 	}, self._tabsBar)
 	rounded(button, 12)
 	tab.Button = button
 	self:_theme(button, "BackgroundColor3", "Surface2")
-	local tabIcon = self:_addIcon(button, tab.IconName, 16)
-	tabIcon.AnchorPoint = Vector2.new(0, 0.5)
-	tabIcon.Position = UDim2.new(0, 12, 0.5, 0)
-	tabIcon.ZIndex = 8
+	local tabIcon = self:_addIcon(button, tab.IconName, 15)
+	tabIcon.Position = UDim2.fromOffset(12, 11)
 	local tabLabel = make("TextLabel", {
 		BackgroundTransparency = 1,
 		Font = Enum.Font.GothamMedium,
@@ -19278,7 +19262,6 @@ function Library:AddTab(options: Options): any
 		Text = tab.Name,
 		TextSize = 13,
 		TextXAlignment = Enum.TextXAlignment.Left,
-		ZIndex = 7,
 	}, button)
 	tab.Label = tabLabel
 	self:_theme(tabLabel, "TextColor3", "Muted")
@@ -19408,51 +19391,23 @@ function Library:_card(options: Options, height: number?): Frame
 		return card
 end
 
-local function __bentoInferIcon(text: any, fallback: string?): string
-	local key = string.lower(tostring(text or "")):gsub("[^%w]+", " ")
-	local rules = {
-		{"overview","layout-dashboard"},{"main","layout-dashboard"},{"routine","fish"},
-		{"shop","store"},{"exchange","repeat-2"},{"quest","scroll-text"},{"upgrade","trending-up"},
-		{"teleport","map-pin"},{"setting","settings-2"},{"config","sliders-horizontal"},
-		{"weather","cloud-sun"},{"skill","sparkles"},{"equip","package-check"},{"rod","fish"},
-		{"orb","gem"},{"fish","fish"},{"farm","tractor"},{"fishing","fish"},{"index","list"},
-		{"craft","hammer"},{"buy","shopping-cart"},{"learn","book-open"},{"trait","shuffle"},
-		{"gacha","dice-5"},{"claim","badge-check"},{"daily","calendar-check"},{"material","package"},
-		{"ticket","ticket-check"},{"character","user-round"},{"npc","user-round"},{"server","server"},
-		{"island","map"},{"player","user-round"},{"world","globe-2"},{"language","languages"},
-		{"security","shield-check"},{"shield","shield-check"},{"interface","panels-top-left"},
-		{"staff","eye"},{"esp","scan-search"},{"community","users-round"},{"about","info"},
-		{"update","history"},{"social","share-2"},{"code","code-2"},{"link","link"},
-		{"search","search"},{"refresh","refresh-cw"},{"speed","gauge"},{"walk","person-standing"},
-		{"fly","move-3d"},{"auto","zap"},{"mode","sliders-horizontal"},{"method","route"},
-		{"resource","database"},{"resource","database"},{"list","list"},{"select","list-filter"},
-		{"redeem","ticket-check"},{"copy","copy"},{"discord","message-circle"},{"youtube","play"},
-		{"tiktok","music-2"},{"header","badge-check"},{"community","users-round"},
-	}
-	for _, rule in ipairs(rules) do
-		if string.find(key, rule[1], 1, true) then return "lucide:" .. rule[2] end
-	end
-	return "lucide:" .. (fallback or "circle-dot")
-end
-
 function Library:_heading(card: Frame, options: Options, y: number?, showDescription: boolean?): (TextLabel, TextLabel?)
-	options = options or {}
-	local titleText = options.Title or options.Name or options.Text or "Untitled"
-	local titleIcon = options.Icon or options.IconName or __bentoInferIcon(titleText, "info")
-	local titleLeft = 40
-	local titleWidth = -56
-	local mark = self:_addIcon(card, titleIcon, 17)
-	mark.Position = UDim2.fromOffset(16, (y or 14) + 1)
-	mark.ZIndex = 8
+	local titleLeft = 16
+	local titleWidth = -32
+	if options.Icon then
+		local mark = self:_addIcon(card, options.Icon, 17)
+		mark.Position = UDim2.fromOffset(16, (y or 14) + 1)
+		titleLeft = 40
+		titleWidth = -56
+	end
 	local title = make("TextLabel", {
 		BackgroundTransparency = 1,
 		Font = Enum.Font.GothamMedium,
 		Position = UDim2.fromOffset(titleLeft, y or 14),
 		Size = UDim2.new(1, titleWidth, 0, 20),
-		Text = titleText,
+		Text = options.Title or options.Name or "Untitled",
 		TextSize = 14,
 		TextXAlignment = Enum.TextXAlignment.Left,
-		ZIndex = 7,
 	}, card)
 	self:_theme(title, "TextColor3", "Text")
 	local description: TextLabel? = nil
@@ -19466,7 +19421,6 @@ function Library:_heading(card: Frame, options: Options, y: number?, showDescrip
 			TextSize = 12,
 			TextTruncate = Enum.TextTruncate.AtEnd,
 			TextXAlignment = Enum.TextXAlignment.Left,
-			ZIndex = 7,
 		}, card)
 		self:_theme(description, "TextColor3", "Muted")
 	end
@@ -19522,12 +19476,14 @@ function Library:_makeSection(tab: any, options: Options): any
 	}, tab.Page)
 	section.Frame = frame
 	if options.Title then
-		local titleIcon = options.Icon or options.IconName or __bentoInferIcon(options.Title, "folder")
-		local mark = self:_addIcon(frame, titleIcon, 15)
-		mark.Position = UDim2.fromOffset(2, 10)
-		mark.ZIndex = 8
-		local titleLeft = 24
-		local titleWidth = -28
+		local titleLeft = 2
+		local titleWidth = -4
+		if options.Icon then
+			local mark = self:_addIcon(frame, options.Icon, 15)
+			mark.Position = UDim2.fromOffset(2, 12)
+			titleLeft = 24
+			titleWidth = -28
+		end
 		local label = make("TextLabel", {
 			BackgroundTransparency = 1,
 			Font = Enum.Font.GothamSemibold,
@@ -19684,54 +19640,34 @@ function Library:AddToggle(options: Options): Control
 end
 
 function Library:AddButton(options: Options): Frame
-	options = options or {}
-	local titleText = options.Title or options.Name or options.Text or "Action"
-	local iconName = options.Icon or options.IconName or __bentoInferIcon(titleText, "play")
 	local card = self:_card(options, options.Height or (options.Description and 82 or 64))
-	local mark = self:_addIcon(card, iconName, 18)
-	mark.AnchorPoint = Vector2.new(0, 0.5)
-	mark.Position = UDim2.new(0, 16, 0.5, 0)
-	mark.ZIndex = 10
+	local mark = self:_addIcon(card, options.Icon or "Activity", 18)
+	mark.Position = UDim2.fromOffset(16, 16)
 	local title = make("TextLabel", {
 		BackgroundTransparency = 1,
 		Font = Enum.Font.GothamMedium,
 		Position = UDim2.fromOffset(44, 13),
-		Size = UDim2.new(1, -96, 0, 20),
-		Text = titleText,
+		Size = UDim2.new(1, -60, 0, 20),
+		Text = options.Title or "Button",
 		TextSize = 14,
 		TextXAlignment = Enum.TextXAlignment.Left,
-		ZIndex = 10,
 	}, card)
 	self:_theme(title, "TextColor3", "Text")
-	local chevron = self:_addIcon(card, "lucide:chevron-right", 15)
-	chevron.AnchorPoint = Vector2.new(1, 0.5)
-	chevron.Position = UDim2.new(1, -14, 0.5, 0)
-	chevron.ZIndex = 10
 	if options.Description then
 		local description = make("TextLabel", {
 			BackgroundTransparency = 1,
 			Font = Enum.Font.Gotham,
-			Position = UDim2.fromOffset(44, 38),
-			Size = UDim2.new(1, -76, 0, 18),
+			Position = UDim2.fromOffset(16, 38),
+			Size = UDim2.new(1, -32, 0, 18),
 			Text = options.Description,
 			TextSize = 12,
 			TextXAlignment = Enum.TextXAlignment.Left,
-			ZIndex = 10,
 		}, card)
 		self:_theme(description, "TextColor3", "Muted")
 	end
-	-- One stable hit target above every decorative child. It never changes size/position on hover.
-	local button = make("TextButton", {
-		Active = true,
-		AutoButtonColor = false,
-		BackgroundTransparency = 1,
-		BorderSizePixel = 0,
-		Size = UDim2.fromScale(1, 1),
-		Text = "",
-		ZIndex = 20,
-		Selectable = false,
-	}, card)
+	local button = make("TextButton", {AutoButtonColor = false, BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Text = ""}, card)
 	self:_connect(button.Activated, function() invoke(options.Callback) end)
+	-- Keep card geometry fixed on click; only color feedback is animated.
 	return card
 end
 
@@ -19740,7 +19676,7 @@ function Library:AddSlider(options: Options): Control
 	local maximum = options.Max or options.Maximum or 100
 	if maximum <= minimum then maximum = minimum + 1 end
 	local step = options.Step or 1
-	local card = self:_card(options, options.Height or 68)
+	local card = self:_card(options, options.Height or 76)
 	local title = self:_heading(card, options, 10, false)
 	local valueLabel = make("TextLabel", {
 		BackgroundTransparency = 1,
@@ -19755,8 +19691,8 @@ function Library:AddSlider(options: Options): Control
 		AutoButtonColor = false,
 		BackgroundColor3 = self.Theme.Surface3,
 		BorderSizePixel = 0,
-		Position = UDim2.fromOffset(16, 38),
-		Size = UDim2.new(1, -32, 0, 7),
+		Position = UDim2.fromOffset(16, 43),
+		Size = UDim2.new(1, -32, 0, 8),
 		Text = "",
 	}, card)
 	rounded(track, 5)
@@ -19828,24 +19764,18 @@ function Library:AddDropdown(options: Options): Control
 	}, card)
 	rounded(button, 8)
 	self:_theme(button, "BackgroundColor3", "Surface3")
-	local fieldIcon = self:_addIcon(button, options.Icon or options.IconName or __bentoInferIcon(options.Title or options.Name, "list-filter"), 14)
-	fieldIcon.AnchorPoint = Vector2.new(0, 0.5)
-	fieldIcon.Position = UDim2.new(0, 10, 0.5, 0)
-	fieldIcon.ZIndex = 8
 	local selectedLabel = make("TextLabel", {
 		BackgroundTransparency = 1,
 		Font = Enum.Font.Gotham,
-		Position = UDim2.fromOffset(32, 0),
-		Size = UDim2.new(1, -58, 1, 0),
+		Position = UDim2.fromOffset(10, 0),
+		Size = UDim2.new(1, -36, 1, 0),
 		TextSize = 12,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextTruncate = Enum.TextTruncate.AtEnd,
 		TextWrapped = false,
 	}, button)
-	local arrow = self:_addIcon(button, "lucide:chevron-down", 15)
-	arrow.AnchorPoint = Vector2.new(1, 0.5)
-	arrow.Position = UDim2.new(1, -10, 0.5, 0)
-	arrow.ZIndex = 8
+	local arrow = self:_addIcon(button, "ChevronDown", 16)
+	arrow.Position = UDim2.new(1, -25, 0.5, -8)
 
 	-- Compact vertical popup; auto-width from longest option text
 	local itemH = 32
@@ -19994,23 +19924,17 @@ function Library:AddMultiDropdown(options: Options): Control
 	}, card)
 	rounded(button, 8)
 	self:_theme(button, "BackgroundColor3", "Surface3")
-	local fieldIcon = self:_addIcon(button, options.Icon or options.IconName or __bentoInferIcon(options.Title or options.Name, "list-filter"), 14)
-	fieldIcon.AnchorPoint = Vector2.new(0, 0.5)
-	fieldIcon.Position = UDim2.new(0, 10, 0.5, 0)
-	fieldIcon.ZIndex = 8
 	local label = make("TextLabel", {
 		BackgroundTransparency = 1,
 		Font = Enum.Font.Gotham,
-		Position = UDim2.fromOffset(32, 0),
-		Size = UDim2.new(1, -58, 1, 0),
+		Position = UDim2.fromOffset(10, 0),
+		Size = UDim2.new(1, -36, 1, 0),
 		TextSize = 12,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextTruncate = Enum.TextTruncate.AtEnd,
 	}, button)
-	local arrow = self:_addIcon(button, "lucide:chevron-down", 15)
-	arrow.AnchorPoint = Vector2.new(1, 0.5)
-	arrow.Position = UDim2.new(1, -10, 0.5, 0)
-	arrow.ZIndex = 8
+	local arrow = self:_addIcon(button, "ChevronDown", 16)
+	arrow.Position = UDim2.new(1, -25, 0.5, -8)
 
 	local itemH = 32
 	local padY, padX, scrollW, maxH = 10, 10, 6, 240
@@ -20312,7 +20236,8 @@ function Library:AddColorPicker(options: Options): Control
 end
 
 function Library:Notify(options: Options): Frame
-	local duration = options.Duration
+	options = type(options) == "table" and options or {}
+	local duration = tonumber(options.Duration)
 	if duration == nil then duration = 4 end
 	local notification = make("Frame", {
 		BackgroundColor3 = self.Theme.Surface,
@@ -20892,8 +20817,7 @@ function Library:_motionInfo(info: TweenInfo?): TweenInfo
 	)
 end
 function Library:Animate(object: Instance, properties: Options, _info: TweenInfo?, key: string?): Tween?
-	-- FINAL STABLE POLICY: visual-only synchronous assignment.
-	-- Size, Position, Rotation, AnchorPoint, TextSize and layout properties are ignored.
+	-- Legacy API kept as a synchronous setter. Nothing animates geometry or hover state.
 	if self._destroyed or not object or not object.Parent then return nil end
 	play(object, properties)
 	if key then self._animations[key] = nil end
@@ -20904,19 +20828,15 @@ function Library:StopAnimation(key: string): self
 	return self
 end
 function Library:Pulse(_object: GuiObject, _property: string?, _amount: number?, _info: TweenInfo?): Tween?
-	-- Disabled intentionally: pulse/scale animation caused hover jitter in executor UI.
 	return nil
 end
 function Library:Shake(_object: GuiObject, _distance: number?, _duration: number?): Tween?
-	-- Disabled intentionally: never move a control because of focus/hover.
 	return nil
 end
 function Library:Hover(_object: GuiObject, _enter: Options, _leave: Options?): self
-	-- Hover is a no-op. No Size/Position/Color mutation is performed here.
 	return self
 end
 function Library:Press(_object: GuiButton, _pressed: Options, _released: Options?): self
-	-- Press is a no-op. Roblox AutoButtonColor/selection are already disabled in make().
 	return self
 end
 function Library:IsTouchDevice(): boolean
@@ -21047,9 +20967,16 @@ function Library:_flushNotifications()
 	end
 end
 function Library:_showQueuedNotification(options: Options): Frame
-	local frame = LEGACY_NOTIFY(self, options)
+	options = type(options) == "table" and options or {}
+	self._notifications = self._notifications or {}
+	self._notificationQueue = self._notificationQueue or {}
+	local ok, frame = pcall(function() return LEGACY_NOTIFY(self, options) end)
+	if not ok or not frame then
+		warn("[KhfreshUI] legacy notification failed:", tostring(frame))
+		return self.Notifications
+	end
 	table.insert(self._notifications, frame)
-	local duration = options.Duration
+	local duration = tonumber(options.Duration)
 	if duration == nil then duration = 4 end
 	duration *= self._notificationDurationScale or 1
 	if duration > 0 then
@@ -21060,6 +20987,8 @@ function Library:_showQueuedNotification(options: Options): Frame
 	return frame
 end
 function Library:_removeNotification(frame: Frame)
+	self._notifications = self._notifications or {}
+	self._notificationQueue = self._notificationQueue or {}
 	for index = #self._notifications, 1, -1 do
 		if self._notifications[index] == frame then
 			table.remove(self._notifications, index)
@@ -21069,12 +20998,16 @@ function Library:_removeNotification(frame: Frame)
 	self:_flushNotifications()
 end
 function Library:Notify(options: Options): Frame
-	local config = shallowCopy(options or {})
-	if self._notificationPaused or #self._notifications >= self._notificationLimit then
+	local config = shallowCopy(type(options) == "table" and options or {})
+	if self._notificationPaused or #self._notifications >= (self._notificationLimit or 4) then
 		table.insert(self._notificationQueue, config)
 		return self.Notifications
 	end
-	return self:_showQueuedNotification(config)
+	local ok, frame = pcall(function() return self:_showQueuedNotification(config) end)
+	if ok and frame then return frame end
+	-- Never let a notification failure abort the Hub.
+	warn("[KhfreshUI] Notify failed:", tostring(frame))
+	return self.Notifications
 end
 function Library:QueueNotification(options: Options): self
 	self:Notify(options)
@@ -21565,8 +21498,11 @@ function Library:AddProgress(options: Options): Control
 	local function render(animated: boolean?)
 		local ratio = (value - minimum) / math.max(maximum - minimum, 0.0001)
 		valueLabel.Text = options.Format and string.format(options.Format, value) or string.format("%d%%", math.round(ratio * 100))
-		-- Geometry is always assigned directly. Animation APIs never change Size/Position.
-		fill.Size = UDim2.fromScale(ratio, 1)
+		if animated then
+			self:Animate(fill, {Size = UDim2.fromScale(ratio, 1)}, MOTION.Smooth, "geo_fill")
+		else
+			fill.Size = UDim2.fromScale(ratio, 1)
+		end
 	end
 	local function set(newValue: any, silent: boolean?)
 		value = clamp(tonumber(newValue) or minimum, minimum, maximum)
@@ -21762,7 +21698,6 @@ function Library:SetWindowSize(width: number, height: number): self
 	self._targetWidth = math.max(320, width)
 	self._targetHeight = math.max(280, height)
 	self:_resize()
-	self:_updateHandlePositions()
 	return self
 end
 function Library:SetWindowPadding(padding: number): self
@@ -21856,7 +21791,8 @@ function Library:AddLink(options: Options): TextButton
 	}, options.Parent or self:_active().Page)
 	self:_theme(link, "TextColor3", "Accent")
 	self:_connect(link.Activated, function() invoke(options.Callback, link) end)
-		self:SetAccessibleText(link, {Role = "link", Label = options.AccessibilityLabel or link.Text})
+	self:Hover(link, {TextTransparency = 0.2}, {TextTransparency = 0})
+	self:SetAccessibleText(link, {Role = "link", Label = options.AccessibilityLabel or link.Text})
 	return link
 end
 function Library:AddStatCard(options: Options): Frame
@@ -22308,28 +22244,6 @@ function Library:SetTheme(theme: any): self
 	return self
 end
 
-local function __inferCompatIcon(text: any, fallback: string?): string
-	local key = string.lower(tostring(text or "")):gsub("[^%w]+", " ")
-	local rules = {
-		{"overview", "layout-dashboard"}, {"routine", "fish"}, {"config", "sliders-horizontal"},
-		{"weather", "cloud-sun"}, {"skill", "sparkles"}, {"equip", "package-check"},
-		{"favorite", "heart"}, {"pray", "hand-heart"}, {"farm", "tractor"}, {"fishing", "fish"},
-		{"index", "list"}, {"upgrade", "trending-up"}, {"craft", "hammer"}, {"buy", "shopping-cart"},
-		{"learn", "book-open"}, {"trait", "shuffle"}, {"gacha", "dices"}, {"exchange", "repeat-2"},
-		{"claim", "badge-check"}, {"daily", "calendar-check"}, {"material", "package"},
-		{"ticket", "ticket-check"}, {"character", "user-round"}, {"npc", "user-round"},
-		{"server", "server"}, {"island", "map"}, {"player", "users-round"}, {"world", "globe-2"},
-		{"streamer", "eye-off"}, {"language", "languages"}, {"shield", "shield-check"},
-		{"security", "shield-check"}, {"interface", "panels-top-left"}, {"ui", "panels-top-left"},
-		{"staff", "eye"}, {"esp", "scan-search"}, {"community", "users-round"},
-		{"about", "info"}, {"update", "history"}, {"social", "share-2"},
-	}
-	for _, rule in ipairs(rules) do
-		if string.find(key, rule[1], 1, true) then return rule[2] end
-	end
-	return fallback or "info"
-end
-
 local function __sizeToWH(value: any, fallbackW: number, fallbackH: number): (number, number)
 	if typeof(value) == "UDim2" then
 		local w = value.X.Offset
@@ -22342,7 +22256,7 @@ end
 
 function Library:CreateWindow(config: Options?): any
 	config = config or {}
-	local width, height = __sizeToWH(config.Size, tonumber(config.Width) or 780, tonumber(config.Height) or 480)
+	local width, height = __sizeToWH(config.Size, tonumber(config.Width) or 900, tonumber(config.Height) or 650)
 	local window = Library.new({
 		Name = config.Name or "KhfreshUI",
 		Title = config.Title or "Khfresh Hub",
@@ -22362,18 +22276,10 @@ function Library:CreateWindow(config: Options?): any
 	window._content = window._contentHost
 	window._nav = window._tabsBar
 
-	-- Background and uploaded logo assets are intentionally disabled.
-	-- KhfreshUI owns the pure-primitive K logo and flat Bento surface.
-	window._backgroundImage = nil
-	function window:SetLogo(_asset: any): any
-		return self
-	end
-	function window:SetBackground(_asset: any, _mode: any, _transparency: any): any
-		local bg = self.Window and self.Window:FindFirstChild("KhfreshBackground")
-		if bg then pcall(function() bg:Destroy() end) end
-		self._backgroundImage = nil
-		return self
-	end
+	-- Logo/background compatibility intentionally stays asset-free. The library owns one
+	-- algorithmic transparent K; callers cannot stack an image over it.
+	function window:SetLogo(_asset: any): any return self end
+	function window:SetBackground(_asset: any): any return self end
 
 	function window:GetTab(name: string): any
 		for _, tab in ipairs(self._tabs) do if tab.Name == name then return tab end end
@@ -22385,11 +22291,11 @@ function Library:CreateWindow(config: Options?): any
 		if type(nameOrConfig) == "table" then
 			options = {
 				Name = nameOrConfig.Title or nameOrConfig.Name or "Tab",
-				Icon = nameOrConfig.Icon or nameOrConfig.IconName or iconName or __inferCompatIcon(nameOrConfig.Title or nameOrConfig.Name),
+				Icon = nameOrConfig.Icon or iconName,
 				LayoutOrder = nameOrConfig.LayoutOrder, Hidden = nameOrConfig.Hidden,
 			}
 		else
-			options = {Name = tostring(nameOrConfig or "Tab"), Icon = iconName or __inferCompatIcon(nameOrConfig)}
+			options = {Name = tostring(nameOrConfig or "Tab"), Icon = iconName}
 		end
 		local tab = self:AddTab(options)
 		function tab:CreateSection(sectionOrName: any, side: any): any
@@ -22397,7 +22303,7 @@ function Library:CreateWindow(config: Options?): any
 			if type(sectionOrName) == "table" then
 				opt = sectionOrName
 			else
-				opt = {Name = tostring(sectionOrName or "Section"), Title = tostring(sectionOrName or "Section"), Icon = __inferCompatIcon(sectionOrName), Side = side}
+				opt = {Name = tostring(sectionOrName or "Section"), Title = tostring(sectionOrName or "Section"), Side = side}
 			end
 			local sec = self:AddSection(opt)
 			local function alias(name, target)
@@ -22405,12 +22311,7 @@ function Library:CreateWindow(config: Options?): any
 			end
 			alias("CreateLabel", function(self2, c) return self2:AddLabel(type(c) == "table" and c or {Text = tostring(c or "")}) end)
 			alias("CreateToggle", function(self2, c) return self2:AddToggle(c or {}) end)
-			alias("CreateButton", function(self2, c)
-		c = type(c) == "table" and c or {Title = tostring(c or "Action")}
-		c.Title = c.Title or c.Name or c.Text or "Action"
-		c.Icon = c.Icon or c.IconName or __inferCompatIcon(c.Title, "lucide:play")
-		return self2:AddButton(c)
-	end)
+			alias("CreateButton", function(self2, c) return self2:AddButton(c or {}) end)
 			alias("CreateSlider", function(self2, c) return self2:AddSlider(c or {}) end)
 			alias("CreateDropdown", function(self2, c) return self2:AddDropdown(c or {}) end)
 			alias("CreateMultiDropdown", function(self2, c) return self2:AddMultiDropdown(c or {}) end)
@@ -22450,12 +22351,7 @@ function Library:CreateWindow(config: Options?): any
 		end
 		return frame
 	end
-		function tab:CreateButton(c: any): any
-		c = type(c) == "table" and c or {Title = tostring(c or "Action")}
-		c.Title = c.Title or c.Name or c.Text or "Action"
-		c.Icon = c.Icon or c.IconName or __inferCompatIcon(c.Title, "lucide:play")
-		return self:AddButton(c)
-	end
+		function tab:CreateButton(c: any): any return self:AddButton(c or {}) end
 		function tab:CreateToggle(c: any): any return self:AddToggle(c or {}) end
 		function tab:CreateDropdown(c: any): any return self:AddDropdown(c or {}) end
 		function tab:CreateMultiDropdown(c: any): any return self:AddMultiDropdown(c or {}) end
@@ -22474,6 +22370,81 @@ function Library:CreateWindow(config: Options?): any
 	end
 
 	return window
+end
+
+
+-- ===== UNIVERSAL ICON CONTRACT =====
+-- Every visible tab/section/control gets an icon. Preferred pack is tried first,
+-- then all other embedded packs. This is deliberately centralized so legacy Hub
+-- feature declarations cannot accidentally create a text-only control.
+local __ICON_RULES = {
+	{"overview", "layout-dashboard"}, {"routine", "fish"}, {"farm", "tractor"},
+	{"fish", "fish"}, {"shop", "store"}, {"exchange", "repeat-2"}, {"quest", "scroll-text"},
+	{"upgrade", "trending-up"}, {"teleport", "map-pin"}, {"setting", "settings-2"},
+	{"config", "sliders-horizontal"}, {"weather", "cloud-sun"}, {"skill", "sparkles"},
+	{"equip", "package-check"}, {"craft", "hammer"}, {"buy", "shopping-cart"},
+	{"learn", "book-open"}, {"trait", "shuffle"}, {"gacha", "dices"}, {"pray", "hand-heart"},
+	{"spirit", "flame"}, {"boss", "crown"}, {"secret", "lock-keyhole"}, {"player", "user-round"},
+	{"npc", "user-round"}, {"server", "server"}, {"island", "map"}, {"community", "users-round"},
+	{"discord", "message-circle"}, {"youtube", "play-circle"}, {"tiktok", "music-2"},
+	{"security", "shield-check"}, {"staff", "eye"}, {"esp", "scan-search"}, {"language", "languages"},
+	{"material", "package"}, {"daily", "calendar-check"}, {"claim", "badge-check"},
+	{"resource", "database"}, {"index", "list"}, {"profile", "circle-user-round"},
+	{"about", "info"}, {"update", "history"}, {"search", "search"}, {"input", "text-cursor-input"},
+	{"color", "palette"}, {"keybind", "keyboard"}, {"toggle", "toggle-right"}, {"dropdown", "list-filter"},
+	{"refresh", "refresh-cw"}, {"delete", "trash-2"}, {"copy", "copy"}, {"redeem", "ticket-check"},
+	{"performance", "gauge"}, {"ui", "panels-top-left"}, {"shield", "shield-check"},
+}
+local function __inferIcon(value, fallback)
+	local text = string.lower(tostring(value or ""))
+	for _, rule in ipairs(__ICON_RULES) do
+		if string.find(text, rule[1], 1, true) then return rule[2] end
+	end
+	return fallback or "circle"
+end
+local function __iconizeOptions(options, fallback)
+	local o = shallowCopy(options or {})
+	local title = o.Title or o.Name or o.Text or "Action"
+	o.Title = o.Title or o.Name or o.Text or title
+	o.Icon = o.Icon or o.IconName or __inferIcon(title, fallback)
+	return o
+end
+
+local __oldAddTab = Library.AddTab
+Library.AddTab = function(self, options)
+	options = __iconizeOptions(options, "layout-dashboard")
+	return __oldAddTab(self, options)
+end
+local __oldAddSection = Library.AddSection
+Library.AddSection = function(self, options)
+	if type(options) == "string" then options = {Title = options} end
+	options = __iconizeOptions(options, "layers-3")
+	return __oldAddSection(self, options)
+end
+for _, __method in ipairs({"AddToggle","AddButton","AddSlider","AddDropdown","AddMultiDropdown","AddTextbox","AddKeybind","AddColorPicker"}) do
+	local __old = Library[__method]
+	Library[__method] = function(self, options)
+		return __old(self, __iconizeOptions(options, __inferIcon((options or {}).Name, "circle")))
+	end
+end
+
+-- Native button arrow: one fixed chevron centered on the far right, never inside text.
+local __nativeAddButton = Library.AddButton
+Library.AddButton = function(self, options)
+	local frame = __nativeAddButton(self, options)
+	if frame and frame.Parent then
+		local old = frame:FindFirstChild("KhfreshButtonChevron")
+		if old then old:Destroy() end
+		local arrow = self:_addIcon(frame, "ChevronRight", 16)
+		arrow.Name = "KhfreshButtonChevron"
+		arrow.AnchorPoint = Vector2.new(1, 0.5)
+		arrow.Position = UDim2.new(1, -16, 0.5, 0)
+		arrow.ZIndex = 20
+		if arrow:IsA("GuiObject") then arrow.Active = false end
+		local title = frame:FindFirstChildOfClass("TextLabel")
+		if title then title.Size = UDim2.new(1, -82, 0, 20) end
+	end
+	return frame
 end
 
 Library.ThemePresets = THEME_PRESETS
