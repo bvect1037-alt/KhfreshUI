@@ -1,5 +1,5 @@
 --[[
-	BentoLucide Executor UI Library (patched: dropdown/keybind/resize/hover)
+	KhfreshUI Executor UI Library — Bento Grid Style
 
 	This file is the UI payload for Roblox script executors. Load it with an
 	executor loader using game:HttpGet and loadstring, for example:
@@ -74,7 +74,7 @@ local LUCIDE_ASSETS: {[string]: string} = {
 	Trash2 = "", Upload = "", User = "", Wand2 = "", X = "",
 }
 
--- Generated from Footagesus/Icons pack dist/Icons.lua files.
+-- Generated Lucide icon assets for KhfreshUI.
 -- Values are static Roblox assets; runtime never performs network or executor calls.
 local BUILTIN_LUCIDE_ASSETS: {[string]: any} = {
     ["a-arrow-down"] = "rbxassetid://92867583610071",
@@ -18235,7 +18235,7 @@ local LUCIDE_FALLBACK: {[string]: string} = {
 	Trash2 = "⌫", Upload = "↑", User = "●", Wand2 = "✧", X = "×",
 }
 
--- Footagesus/Icons (github.com/Footagesus/Icons) publishes ordinary images and
+-- KhfreshUI icon pack uses ordinary Roblox image assets and
 -- spritesheet entries. The
 -- generated maps are embedded so runtime code never downloads or executes
 -- untrusted code.
@@ -18409,6 +18409,137 @@ local function setProps(object: Instance, properties: {[string]: any})
 	end
 end
 
+-- ===== GEOMETRY FREEZE =====
+local FreezeRegistry: {[GuiObject]: {Size: UDim2, Position: UDim2, AnchorPoint: Vector2}} = {}
+local FreezeBusy = false
+local function snapshotGeo(obj: GuiObject)
+	return { Size = obj.Size, Position = obj.Position, AnchorPoint = obj.AnchorPoint }
+end
+local function freezeGui(obj: Instance?, _deep: boolean?)
+	if not obj or not obj:IsA("GuiObject") then return end
+	local guiObj = obj :: GuiObject
+	local n = guiObj.Name
+	if n == "FadeHost" or n == "WindowShadow" or n == "PopupLayer" or n == "Notifications" or n == "HoverLayer" then
+		return
+	end
+	FreezeRegistry[guiObj] = snapshotGeo(guiObj)
+	guiObj:GetPropertyChangedSignal("Size"):Connect(function()
+		if FreezeBusy then return end
+		local snap = FreezeRegistry[guiObj]
+		if snap and guiObj.Size ~= snap.Size then
+			FreezeBusy = true
+			guiObj.Size = snap.Size
+			FreezeBusy = false
+		end
+	end)
+	guiObj:GetPropertyChangedSignal("Position"):Connect(function()
+		if FreezeBusy then return end
+		local snap = FreezeRegistry[guiObj]
+		if snap and guiObj.Position ~= snap.Position then
+			FreezeBusy = true
+			guiObj.Position = snap.Position
+			FreezeBusy = false
+		end
+	end)
+end
+local function unfreezeGui(obj: Instance?)
+	if obj and obj:IsA("GuiObject") then FreezeRegistry[obj] = nil end
+end
+local function refreezeGui(obj: GuiObject)
+	if not obj then return end
+	FreezeBusy = true
+	FreezeRegistry[obj] = snapshotGeo(obj)
+	FreezeBusy = false
+end
+
+-- ===== KHFRESH HOVER (overlay only, never Size/Position) =====
+local hoverTransparencies: {[GuiObject]: number} = {}
+local hoverGenerations: {[GuiObject]: number} = {}
+local interactionTweens: {[Instance]: {[string]: any}} = {}
+
+local function animateChannel(object: Instance, channel: string, info: TweenInfo, properties: {[string]: any})
+	if not object then return nil end
+	local channels = interactionTweens[object]
+	if not channels then
+		channels = {}
+		interactionTweens[object] = channels
+	end
+	if channels[channel] then pcall(function() channels[channel]:Cancel() end) end
+	local ok, animation = pcall(function()
+		return TweenService:Create(object, info, properties)
+	end)
+	if not ok or not animation then return nil end
+	channels[channel] = animation
+	animation.Completed:Connect(function()
+		if channels[channel] == animation then channels[channel] = nil end
+	end)
+	animation:Play()
+	return animation
+end
+
+local function makeHoverLayer(parent: GuiObject, color: Color3?, radius: number?, transparency: number?): Frame
+	local existing = parent:FindFirstChild("HoverLayer")
+	if existing and existing:IsA("Frame") then return existing :: Frame end
+	local layer = Instance.new("Frame")
+	layer.Name = "HoverLayer"
+	layer.BackgroundColor3 = color or Color3.fromRGB(43, 49, 68)
+	layer.BackgroundTransparency = 1
+	layer.BorderSizePixel = 0
+	layer.Size = UDim2.fromScale(1, 1)
+	layer.Position = UDim2.fromScale(0, 0)
+	layer.Visible = false
+	layer.Active = false
+	layer.Selectable = false
+	layer.ZIndex = (parent.ZIndex or 1) + 1
+	layer.Parent = parent
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, radius or 12)
+	corner.Parent = layer
+	hoverTransparencies[layer] = (transparency == nil) and 0.88 or transparency
+	hoverGenerations[layer] = 0
+	return layer
+end
+
+local function setHoverVisible(layer: Frame?, visible: boolean)
+	if not layer or not layer.Parent then return end
+	hoverGenerations[layer] = (hoverGenerations[layer] or 0) + 1
+	local generation = hoverGenerations[layer]
+	if visible then
+		layer.Visible = true
+		animateChannel(layer, "hover", MOTION.Fast, {
+			BackgroundTransparency = hoverTransparencies[layer] or 0.88,
+		})
+	else
+		local fade = animateChannel(layer, "hover", MOTION.Smooth, { BackgroundTransparency = 1 })
+		if fade then
+			fade.Completed:Connect(function()
+				if hoverGenerations[layer] == generation and layer.Parent then
+					layer.Visible = false
+				end
+			end)
+		end
+	end
+end
+
+local function bindKhfreshHover(hitTarget: GuiObject, layer: Frame?, onEnter: (() -> ())?, onLeave: (() -> ())?)
+	if not hitTarget then return end
+	hitTarget.MouseEnter:Connect(function()
+		if layer then setHoverVisible(layer, true) end
+		if onEnter then onEnter() end
+	end)
+	hitTarget.MouseLeave:Connect(function()
+		if layer then setHoverVisible(layer, false) end
+		if onLeave then onLeave() end
+	end)
+end
+
+local function attachKhfreshHover(target: GuiObject, color: Color3?, radius: number?)
+	if not target then return nil end
+	local layer = makeHoverLayer(target, color, radius or 12, 0.88)
+	bindKhfreshHover(target, layer)
+	return layer
+end
+
 local function clamp(value: number, minimum: number, maximum: number): number
 	return math.max(minimum, math.min(maximum, value))
 end
@@ -18434,7 +18565,7 @@ local function invoke(callback: any, ...: any)
 	end
 	local ok, errorMessage = pcall(callback, ...)
 	if not ok then
-		warn("[BentoLucide] callback error:", errorMessage)
+		warn("[KhfreshUI] callback error:", errorMessage)
 	end
 end
 
@@ -18772,7 +18903,7 @@ end
 function Library.new(options: Options?): any
 	local config = options or {}
 	local player = Players.LocalPlayer
-	assert(player, "BentoLucide must be required from a LocalScript")
+	assert(player, "KhfreshUI must be required from a LocalScript")
 
 	local self = setmetatable({}, Library)
 	self._connections = {} :: {Connection}
@@ -18813,7 +18944,7 @@ function Library.new(options: Options?): any
 	self.PerformanceProfile = "PC"
 
 	local gui = make("ScreenGui", {
-		Name = config.Name or "BentoLucide",
+		Name = config.Name or "KhfreshUI",
 		IgnoreGuiInset = true,
 		ResetOnSpawn = false,
 		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
@@ -19404,12 +19535,10 @@ function Library:AddTab(options: Options): any
 	tab.Layout = pageLayout
 	table.insert(self._tabs, tab)
 	self:_connect(button.Activated, function() self:SelectTab(tab) end)
-	self:_connect(button.MouseEnter, function()
-		if not tab._selected then button.BackgroundColor3 = self.Theme.Surface3 end
-	end)
-	self:_connect(button.MouseLeave, function()
-		if not tab._selected then button.BackgroundColor3 = self.Theme.Surface2 end
-	end)
+	do
+		local tabHover = makeHoverLayer(button, self.Theme.Surface3, 12, 0.85)
+		bindKhfreshHover(button, tabHover, nil, nil)
+	end
 	self._tabsBar.Visible = #self._tabs > 0
 	self._contentTop = 78
 	local left = self._contentLeft or 198
@@ -19487,6 +19616,17 @@ function Library:_card(options: Options, height: number?): Frame
 		if not options.BackgroundColor then self:_theme(card, "BackgroundColor3", "Surface2") end
 		rounded(card, options.Radius or 12)
 	end
+	task.defer(function()
+		if card and card.Parent then
+			attachKhfreshHover(card, self.Theme and self.Theme.Surface3, options.Radius or 16)
+			freezeGui(card, false)
+			for _, ch in ipairs(card:GetChildren()) do
+				if ch:IsA("TextButton") or ch:IsA("ImageButton") then
+					freezeGui(ch, false)
+				end
+			end
+		end
+	end)
 	return card
 end
 
@@ -20429,7 +20569,7 @@ function Library:ImportConfig(serialized: string, silent: boolean?): (boolean, s
 		local control = self._controls[key]
 		if control then
 			local success, errorMessage = pcall(function() control:Set(decodeConfig(value), silent == true) end)
-			if not success then warn("[BentoLucide] unable to import", key, errorMessage) end
+			if not success then warn("[KhfreshUI] unable to import", key, errorMessage) end
 		end
 	end
 	return true, nil
@@ -20864,7 +21004,7 @@ function Library:_applyStyle(object: Instance, style: Options)
 end
 -- Apply Roblox properties to a widget. Theme keys may be used as values.
 function Library:Style(object: Instance, style: Options): Instance
-	assert(object, "BentoLucide:Style requires an Instance")
+	assert(object, "KhfreshUI:Style requires an Instance")
 	self._styledWidgets[object] = shallowCopy(style)
 	self:_applyStyle(object, style)
 	return object
@@ -20987,20 +21127,42 @@ function Library:Shake(object: GuiObject, distance: number?, duration: number?):
 	return tween
 end
 function Library:Hover(object: GuiObject, enter: Options, leave: Options?): self
-	-- NO-OP: any hover visual was causing jump reports on some clients
+	-- Khfresh hover: overlay HoverLayer only — never Size/Position of object
+	if object then
+		attachKhfreshHover(object, self.Theme and self.Theme.Surface3, 12)
+	end
 	return self
 end
 function Library:Press(object: GuiButton, pressed: Options, released: Options?): self
-	-- NO-OP: press feedback disabled (anti-jump)
+	-- Khfresh press: UIScale only (no Size/Position)
+	if not object then return self end
+	local scale = object:FindFirstChildOfClass("UIScale")
+	if not scale then
+		scale = Instance.new("UIScale")
+		scale.Scale = 1
+		scale.Parent = object
+	end
+	self:_connect(object.InputBegan, function(input: InputObject)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			animateChannel(scale, "press", MOTION.Fast, { Scale = 0.98 })
+		end
+	end)
+	self:_connect(object.InputEnded, function(input: InputObject)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			animateChannel(scale, "press", MOTION.Smooth, { Scale = 1 })
+		end
+	end)
 	return self
 end
 function Library:IsTouchDevice(): boolean
 	return UserInputService.TouchEnabled and not UserInputService.MouseEnabled
 end
 function Library:EnableTouchFeedback(object: GuiObject): self
-	-- Disabled geometry / transparency feedback on full-bleed buttons.
-	-- Changing BackgroundTransparency on transparent overlays causes enter/leave spam + visual jump.
+	-- Khfresh: HoverLayer on the object (no geometry change)
 	if self._touchFeedbackEnabled == false then return self end
+	if object then
+		attachKhfreshHover(object, self.Theme and self.Theme.Surface3, 12)
+	end
 	return self
 end
 function Library:GetBreakpoint(width: number?): string
