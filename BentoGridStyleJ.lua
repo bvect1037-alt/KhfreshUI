@@ -19099,7 +19099,46 @@ function Library.new(options: Options?): any
 	}, notifications)
 	self.Notifications = notifications
 
-	self:_connect(toggle.Activated, function() self:Toggle() end)
+	-- Floating toggle: drag to move, click (no drag) to open/close UI
+	do
+		local dragging = false
+		local moved = false
+		local startInput = nil
+		local startPos = nil
+		self:_connect(toggle.InputBegan, function(input)
+			if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then
+				return
+			end
+			dragging = true
+			moved = false
+			startInput = input.Position
+			startPos = toggle.Position
+			self:_connect(input.Changed, function()
+				if input.UserInputState == Enum.UserInputState.End then
+					dragging = false
+				end
+			end)
+		end)
+		self:_connect(UserInputService.InputChanged, function(input)
+			if not dragging or not startInput or not startPos then return end
+			if input.UserInputType ~= Enum.UserInputType.MouseMovement and input.UserInputType ~= Enum.UserInputType.Touch then
+				return
+			end
+			local d = input.Position - startInput
+			if math.abs(d.X) + math.abs(d.Y) > 6 then
+				moved = true
+			end
+			toggle.Position = UDim2.new(
+				startPos.X.Scale, startPos.X.Offset + d.X,
+				startPos.Y.Scale, startPos.Y.Offset + d.Y
+			)
+		end)
+		self:_connect(toggle.Activated, function()
+			if not moved then
+				self:Toggle()
+			end
+		end)
+	end
 	self:_connect(toggle.MouseEnter, function()
 		halo.BackgroundTransparency = 0.67
 		toggle.BackgroundColor3 = self.Theme.Surface3
@@ -19116,6 +19155,24 @@ function Library.new(options: Options?): any
 	self._currentWidth = clamp(self._targetWidth, 320, math.max(320, viewport.X - 28))
 	self._currentHeight = clamp(self._targetHeight, 280, math.max(280, viewport.Y - 74))
 	self.Window.Size = UDim2.fromOffset(self._currentWidth, self._currentHeight)
+	-- Prepare CanvasGroup fade host (window + shadow live inside for GroupTransparency)
+	do
+		local fadeHost = Instance.new("CanvasGroup")
+		fadeHost.Name = "FadeHost"
+		fadeHost.BackgroundTransparency = 1
+		fadeHost.BorderSizePixel = 0
+		fadeHost.Size = UDim2.fromScale(1, 1)
+		fadeHost.GroupTransparency = 0
+		fadeHost.ZIndex = 1
+		fadeHost.Parent = self.Gui
+		self.Window.Parent = fadeHost
+		if self.WindowShadow then
+			self.WindowShadow.Parent = fadeHost
+			self.WindowShadow.ZIndex = 0
+		end
+		self._fadeHost = fadeHost
+	end
+	task.defer(function() self:_updateHandlePositions() end)
 	return self
 end
 
@@ -19126,38 +19183,68 @@ function Library:SetVisible(visible: boolean)
 	local window = self.Window
 	if not window then return self end
 
-	-- Fade only (NO UIScale). Scaling the window moves every control under the cursor
-	-- and causes infinite MouseEnter/MouseLeave jump.
-	local fadeInfo = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-	local handles = { self.DragFooter, self.ResizeGrip, self.WindowShadow }
+	-- True whole-UI fade via CanvasGroup.GroupTransparency (children fade in AND out).
+	-- Never use UIScale here — scale under cursor causes control jump loops.
+	local gui = self.Gui
+	local fadeHost = self._fadeHost
+	if not fadeHost or not fadeHost.Parent then
+		fadeHost = Instance.new("CanvasGroup")
+		fadeHost.Name = "FadeHost"
+		fadeHost.BackgroundTransparency = 1
+		fadeHost.BorderSizePixel = 0
+		fadeHost.Size = UDim2.fromScale(1, 1)
+		fadeHost.GroupTransparency = 0
+		fadeHost.ZIndex = 1
+		if gui then fadeHost.Parent = gui end
+		window.Parent = fadeHost
+		if self.WindowShadow and self.WindowShadow.Parent then
+			self.WindowShadow.Parent = fadeHost
+			self.WindowShadow.ZIndex = 0
+		end
+		self._fadeHost = fadeHost
+	end
 
-	-- Destroy any leftover scale from older builds
 	local leftover = window:FindFirstChild("WindowMotionScale")
 	if leftover then leftover:Destroy() end
+	window.BackgroundTransparency = 0
+
+	local fadeInfo = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+	local handles = { self.DragFooter, self.ResizeGrip }
+	self._fadeToken = (self._fadeToken or 0) + 1
+	local token = self._fadeToken
 
 	if self._visible then
+		-- FADE IN
 		window.Visible = true
 		window.Size = UDim2.fromOffset(self._currentWidth or self._targetWidth, self._currentHeight or self._targetHeight)
-		window.BackgroundTransparency = 0.25
+		fadeHost.Visible = true
+		fadeHost.GroupTransparency = 1
 		for _, h in ipairs(handles) do
 			if h then h.Visible = true end
 		end
+		if self.WindowShadow then self.WindowShadow.Visible = true end
 		pcall(function()
-			TweenService:Create(window, fadeInfo, { BackgroundTransparency = 0 }):Play()
+			local tw = TweenService:Create(fadeHost, fadeInfo, { GroupTransparency = 0 })
+			tw:Play()
 		end)
-		task.defer(function() self:_updateHandlePositions() end)
+		task.defer(function()
+			if token == self._fadeToken then self:_updateHandlePositions() end
+		end)
 	else
+		-- FADE OUT
+		fadeHost.GroupTransparency = 0
 		pcall(function()
-			local t = TweenService:Create(window, fadeInfo, { BackgroundTransparency = 0.35 })
-			t:Play()
-			task.delay(0.18, function()
-				if self._destroyed or self._visible then return end
-				window.Visible = false
-				window.BackgroundTransparency = 0
-				for _, h in ipairs(handles) do
-					if h then h.Visible = false end
-				end
-			end)
+			local tw = TweenService:Create(fadeHost, fadeInfo, { GroupTransparency = 1 })
+			tw:Play()
+		end)
+		task.delay(0.22, function()
+			if self._destroyed or self._visible or token ~= self._fadeToken then return end
+			window.Visible = false
+			fadeHost.GroupTransparency = 0
+			for _, h in ipairs(handles) do
+				if h then h.Visible = false end
+			end
+			if self.WindowShadow then self.WindowShadow.Visible = false end
 		end)
 	end
 	return self
@@ -19223,7 +19310,7 @@ function Library:AddTab(options: Options): any
 
 	local page = make("ScrollingFrame", {
 		Active = true,
-		AutomaticCanvasSize = Enum.AutomaticSize.Y,
+		AutomaticCanvasSize = Enum.AutomaticSize.None,
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
 		CanvasSize = UDim2.fromOffset(0, 0),
@@ -19249,6 +19336,17 @@ function Library:AddTab(options: Options): any
 		Padding = UDim.new(0, 10),
 		SortOrder = Enum.SortOrder.LayoutOrder,
 	}, page)
+	-- Manual canvas size (no AutomaticCanvasSize jitter while hovering controls)
+	local function refreshCanvas()
+		task.defer(function()
+			if not page.Parent then return end
+			local y = pageLayout.AbsoluteContentSize.Y + 24
+			page.CanvasSize = UDim2.fromOffset(0, math.max(y, 0))
+		end)
+	end
+	self:_connect(page.ChildAdded, refreshCanvas)
+	self:_connect(page.ChildRemoved, refreshCanvas)
+	task.defer(refreshCanvas)
 	tab.Page = page
 	tab.Layout = pageLayout
 	table.insert(self._tabs, tab)
@@ -19456,11 +19554,32 @@ function Library:_makeSection(tab: any, options: Options): any
 	}, frame)
 	make("UIListLayout", {Padding = UDim.new(0, 10), SortOrder = Enum.SortOrder.LayoutOrder}, section.Content)
 	table.insert(tab._sections, section)
-	-- AutomaticSize only — NEVER listen AbsoluteContentSize (that feedback loop jumps controls)
-	section.Frame.AutomaticSize = Enum.AutomaticSize.Y
-	section.Content.AutomaticSize = Enum.AutomaticSize.Y
+	-- One-shot height measure only when children change (no AbsoluteContentSize signal = no jump loop)
 	section.Content.Size = UDim2.new(1, 0, 0, 0)
-	section.Frame.Size = UDim2.new(1, 0, 0, options.Title and 35 or 0)
+	local function measureOnce()
+		local layout = section.Content:FindFirstChildOfClass("UIListLayout")
+		local contentH = 0
+		if layout then
+			contentH = layout.AbsoluteContentSize.Y
+		else
+			for _, ch in ipairs(section.Content:GetChildren()) do
+				if ch:IsA("GuiObject") and ch.Visible then
+					contentH += ch.AbsoluteSize.Y + 10
+				end
+			end
+		end
+		local top = options.Title and 35 or 0
+		local h = math.max(top + 8, math.ceil(contentH + top + 4))
+		section.Content.Size = UDim2.new(1, 0, 0, math.max(0, h - top))
+		section.Frame.Size = UDim2.new(1, 0, 0, h)
+	end
+	self:_connect(section.Content.ChildAdded, function()
+		task.defer(measureOnce)
+	end)
+	self:_connect(section.Content.ChildRemoved, function()
+		task.defer(measureOnce)
+	end)
+	task.defer(measureOnce)
 	return section
 end
 
@@ -21264,10 +21383,17 @@ local function makeSectionIn(library: any, parent: Instance, tab: any, options: 
 		Size = UDim2.new(1, 0, 1, -top),
 	}, frame)
 	make("UIListLayout", {Padding = UDim.new(0, 10), SortOrder = Enum.SortOrder.LayoutOrder}, section.Content)
-	frame.AutomaticSize = Enum.AutomaticSize.Y
-	section.Content.AutomaticSize = Enum.AutomaticSize.Y
 	section.Content.Size = UDim2.new(1, 0, 0, 0)
-	frame.Size = UDim2.new(1, 0, 0, top)
+	local function measureOnce()
+		local layout = section.Content:FindFirstChildOfClass("UIListLayout")
+		local contentH = layout and layout.AbsoluteContentSize.Y or 0
+		local h = math.max(top + 8, math.ceil(contentH + top + 4))
+		section.Content.Size = UDim2.new(1, 0, 0, math.max(0, h - top))
+		frame.Size = UDim2.new(1, 0, 0, h)
+	end
+	library:_connect(section.Content.ChildAdded, function() task.defer(measureOnce) end)
+	library:_connect(section.Content.ChildRemoved, function() task.defer(measureOnce) end)
+	task.defer(measureOnce)
 	return section
 end
 function Section:AddSection(options: Options): any
