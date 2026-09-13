@@ -18356,7 +18356,7 @@ end
 	- Hover / Press / tab highlight → INSTANT color only (no tween)
 	- Open/close UI → CanvasGroup.GroupTransparency only
 	- play() → color/transparency ONLY (never Size/Position)
-	- playGeo() → Size/Position only for progress bars, explicit call sites
+	- playGeo() → internal progress bars only; hover/focus never changes geometry
 ]]
 local GEOMETRY_PROPS = {
 	Size = true, Position = true, AnchorPoint = true, Rotation = true,
@@ -18778,6 +18778,22 @@ end
 function Library.new(options: Options?): any
 	local config = options or {}
 	local player = Players.LocalPlayer
+	-- Remove stale instances from previous executions. Without this, multiple overlapping
+	-- windows/floating buttons remain active and can make the UI appear to jump when the
+	-- cursor crosses their overlapping hitboxes.
+	local targetGuiName = tostring(config.Name or "KhfreshUI")
+	local staleNames = { [targetGuiName] = true, KhfreshUI = true, KhfreshBentoUI = true, KhfreshFloatingGui = true }
+	pcall(function()
+		for _, child in ipairs(player:WaitForChild("PlayerGui"):GetChildren()) do
+			if staleNames[child.Name] then child:Destroy() end
+		end
+	end)
+	pcall(function()
+		local coreGui = game:GetService("CoreGui")
+		for _, child in ipairs(coreGui:GetChildren()) do
+			if staleNames[child.Name] then child:Destroy() end
+		end
+	end)
 	assert(player, "KhfreshUI must be required from a LocalScript")
 
 	local self = setmetatable({}, Library)
@@ -18891,35 +18907,8 @@ function Library.new(options: Options?): any
 	self:_theme(window, "BackgroundColor3", "Background")
 	self.Window = window
 
-	-- Soft drop shadow (sibling under window, no layout interaction with controls)
-	local shadow = make("Frame", {
-		AnchorPoint = window.AnchorPoint,
-		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
-		BackgroundTransparency = 0.55,
-		BorderSizePixel = 0,
-		Name = "WindowShadow",
-		Position = UDim2.new(window.Position.X.Scale, window.Position.X.Offset + 6, window.Position.Y.Scale, window.Position.Y.Offset + 10),
-		Size = UDim2.fromOffset(self._targetWidth, self._targetHeight),
-		ZIndex = 9,
-	}, gui)
-	rounded(shadow, 24)
-	self.WindowShadow = shadow
-	self:_connect(window:GetPropertyChangedSignal("Position"), function()
-		if self.WindowShadow then
-			local p = window.Position
-			self.WindowShadow.Position = UDim2.new(p.X.Scale, p.X.Offset + 6, p.Y.Scale, p.Y.Offset + 10)
-		end
-	end)
-	self:_connect(window:GetPropertyChangedSignal("Size"), function()
-		if self.WindowShadow then
-			self.WindowShadow.Size = window.Size
-		end
-	end)
-	self:_connect(window:GetPropertyChangedSignal("Visible"), function()
-		if self.WindowShadow then
-			self.WindowShadow.Visible = window.Visible
-		end
-	end)
+	-- No external drop shadow: it drifts independently of the window and looks detached.
+	self.WindowShadow = nil
 
 	local topbar = make("Frame", {
 		BackgroundTransparency = 1,
@@ -19188,7 +19177,6 @@ function Library:SetVisible(visible: boolean)
 	local window = self.Window
 	if not window then return self end
 	window.Visible = self._visible
-	if self.WindowShadow then self.WindowShadow.Visible = self._visible end
 	if self.DragFooter then self.DragFooter.Visible = self._visible end
 	if self.ResizeGrip then self.ResizeGrip.Visible = self._visible end
 	return self
@@ -20804,17 +20792,13 @@ end
 function Library:Animate(object: Instance, properties: Options, info: TweenInfo?, key: string?): Tween?
 	if self._destroyed or not object or not object.Parent then return nil end
 	if type(properties) ~= "table" then return nil end
-	local allowGeo = type(key) == "string" and (string.sub(key, 1, 5) == "shake" or string.sub(key, 1, 3) == "geo")
+	-- Public Animate is intentionally visual-only. Geometry animation is reserved for
+	-- explicit internal progress code so hover/focus can never move UI objects.
 	if key and self._animations[key] then
 		pcall(function() self._animations[key]:Cancel() end)
 		self._animations[key] = nil
 	end
-	local tween
-	if allowGeo then
-		tween = playGeo(object, properties, self:_motionInfo(info))
-	else
-		tween = play(object, visualFeedback(properties), self:_motionInfo(info))
-	end
+	local tween = play(object, visualFeedback(properties), self:_motionInfo(info))
 	if tween and key then
 		self._animations[key] = tween
 		self:TrackCleanup(function()
@@ -20845,23 +20829,9 @@ function Library:Pulse(object: GuiObject, property: string?, amount: number?, in
 	return tween
 end
 function Library:Shake(object: GuiObject, distance: number?, duration: number?): Tween?
-	local start = object.Position
-	local offset = distance or 5
-	local info = TweenInfo.new((duration or 0.28) / 4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-	local tween = self:Animate(object, {Position = start + UDim2.fromOffset(offset, 0)}, info, "shake1")
-	if tween then
-		self:TrackCleanup(tween.Completed:Connect(function()
-			if object.Parent then
-				local second = self:Animate(object, {Position = start - UDim2.fromOffset(offset, 0)}, info, "shake2")
-				if second then
-					self:TrackCleanup(second.Completed:Connect(function()
-						if object.Parent then self:Animate(object, {Position = start}, info, "shake3") end
-					end))
-				end
-			end
-		end))
-	end
-	return tween
+	-- Intentionally disabled: position animation causes the cursor-hover jump/shake bug.
+	-- Keep the API for compatibility with existing hubs.
+	return nil
 end
 function Library:Hover(object: GuiObject, enter: Options, leave: Options?): self
 	return self
