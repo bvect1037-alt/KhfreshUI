@@ -53,9 +53,9 @@ local DEFAULT_THEME: Theme = {
 }
 
 local MOTION = {
-	Fast = TweenInfo.new(0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-	Smooth = TweenInfo.new(0.24, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
-	Spring = TweenInfo.new(0.38, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+	Fast = TweenInfo.new(0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+	Smooth = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+	Spring = TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
 }
 
 -- These are deliberately a mapping rather than an external icon package. A
@@ -18350,6 +18350,7 @@ local function stroked(parent: Instance, color: Color3, transparency: number?, t
 end
 
 local function play(object: Instance, properties: {[string]: any}, info: TweenInfo?): Tween?
+	if type(properties) ~= "table" then return nil end
 	local ok, result = pcall(function()
 		local animation = TweenService:Create(object, info or MOTION.Smooth, properties)
 		animation:Play()
@@ -18635,24 +18636,16 @@ function Library:_setWindowPosition()
 end
 
 function Library:_updateHandlePositions()
+	-- DragFooter / ResizeGrip are parented to Window with relative UDim2.
+	-- Do not rewrite AbsolutePosition every frame (that caused continuous jump).
 	if not self.Window or not self.Window.Parent then
 		return
 	end
-	if self.DragFooter and self.DragFooter.Parent then
-		local position = self.Window.AbsolutePosition
-		local size = self.Window.AbsoluteSize
-		self.DragFooter.Position = UDim2.fromOffset(
-			position.X + math.floor(size.X / 2) - math.floor(self.DragFooter.AbsoluteSize.X / 2),
-			position.Y + size.Y + 8
-		)
+	if self.DragFooter and self.DragFooter.Parent == self.Window then
+		self.DragFooter.Position = UDim2.new(0.5, 0, 1, 8)
 	end
-	if self.ResizeGrip and self.ResizeGrip.Parent then
-		local position = self.Window.AbsolutePosition
-		local size = self.Window.AbsoluteSize
-		self.ResizeGrip.Position = UDim2.fromOffset(
-			position.X + size.X - self.ResizeGrip.AbsoluteSize.X - 2,
-			position.Y + size.Y + 4
-		)
+	if self.ResizeGrip and self.ResizeGrip.Parent == self.Window then
+		self.ResizeGrip.Position = UDim2.new(1, 2, 1, 4)
 	end
 end
 
@@ -18831,7 +18824,7 @@ function Library.new(options: Options?): any
 		AnchorPoint = Vector2.new(1, 0),
 		BackgroundColor3 = self.Theme.Background,
 		BorderSizePixel = 0,
-		ClipsDescendants = true,
+		ClipsDescendants = false,
 		Name = "Window",
 		Position = UDim2.new(1, -22, 0, 22),
 		Size = UDim2.fromOffset(self._targetWidth, self._targetHeight),
@@ -18969,11 +18962,13 @@ function Library.new(options: Options?): any
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
 		Name = "DragFooter",
-		Position = UDim2.fromOffset(0, 0),
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.new(0.5, 0, 1, 8),
 		Size = UDim2.fromOffset(230, 26),
 		Text = "",
+		TextTransparency = 1,
 		ZIndex = 15,
-	}, gui)
+	}, window)
 	local dragPill = make("Frame", {
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		BackgroundColor3 = Color3.fromRGB(205, 207, 214),
@@ -18995,12 +18990,13 @@ function Library.new(options: Options?): any
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
 		Name = "ResizeGrip",
-		Position = UDim2.fromOffset(0, 0),
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, 2, 1, 4),
 		Size = UDim2.fromOffset(48, 42),
 		Text = "",
 		TextTransparency = 1,
 		ZIndex = 16,
-	}, gui)
+	}, window)
 	local gripBarA = make("Frame", {
 		AnchorPoint = Vector2.new(1, 1),
 		BackgroundColor3 = Color3.fromRGB(155, 157, 165),
@@ -19362,16 +19358,30 @@ function Library:_makeSection(tab: any, options: Options): any
 	}, frame)
 	make("UIListLayout", {Padding = UDim.new(0, 10), SortOrder = Enum.SortOrder.LayoutOrder}, section.Content)
 	table.insert(tab._sections, section)
+	-- Stable height: debounce AbsoluteContentSize to prevent continuous layout jitter
+	local lastSectionH = -1
 	local function resizeSection()
 		local layout = section.Content:FindFirstChildOfClass("UIListLayout")
-		if layout then
-			section.Frame.Size = UDim2.new(1, 0, 0, layout.AbsoluteContentSize.Y + (options.Title and 35 or 0))
-		end
+		if not layout then return end
+		local h = math.ceil(layout.AbsoluteContentSize.Y + (options.Title and 35 or 0))
+		if h < 40 then h = 40 end
+		if math.abs(h - lastSectionH) < 1 then return end
+		lastSectionH = h
+		section.Frame.Size = UDim2.new(1, 0, 0, h)
 	end
-	self:_connect(section.Content.ChildAdded, resizeSection)
-	self:_connect(section.Content.ChildRemoved, resizeSection)
+	self:_connect(section.Content.ChildAdded, function()
+		task.defer(resizeSection)
+	end)
+	self:_connect(section.Content.ChildRemoved, function()
+		task.defer(resizeSection)
+	end)
 	local sectionLayout = section.Content:FindFirstChildOfClass("UIListLayout")
-	if sectionLayout then self:_connect(sectionLayout:GetPropertyChangedSignal("AbsoluteContentSize"), resizeSection) end
+	if sectionLayout then
+		self:_connect(sectionLayout:GetPropertyChangedSignal("AbsoluteContentSize"), function()
+			task.defer(resizeSection)
+		end)
+	end
+	task.defer(resizeSection)
 	return section
 end
 
@@ -20656,8 +20666,15 @@ function Library:_motionInfo(info: TweenInfo?): TweenInfo
 end
 function Library:Animate(object: Instance, properties: Options, info: TweenInfo?, key: string?): Tween?
 	if self._destroyed or not object.Parent then return nil end
+	if type(properties) ~= "table" then return nil end
+	-- Never tween Size/Position on hover (prevents continuous control jump)
+	local allowGeo = type(key) == "string" and (string.sub(key, 1, 5) == "shake" or string.sub(key, 1, 3) == "geo")
+	if not allowGeo then
+		properties = visualFeedback(properties)
+	end
+	if next(properties) == nil then return nil end
 	if key and self._animations[key] then
-		self._animations[key]:Cancel()
+		pcall(function() self._animations[key]:Cancel() end)
 		self._animations[key] = nil
 	end
 	local tween = play(object, properties, self:_motionInfo(info))
@@ -20694,14 +20711,14 @@ function Library:Shake(object: GuiObject, distance: number?, duration: number?):
 	local start = object.Position
 	local offset = distance or 5
 	local info = TweenInfo.new((duration or 0.28) / 4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-	local tween = self:Animate(object, {Position = start + UDim2.fromOffset(offset, 0)}, info)
+	local tween = self:Animate(object, {Position = start + UDim2.fromOffset(offset, 0)}, info, "shake1")
 	if tween then
 		self:TrackCleanup(tween.Completed:Connect(function()
 			if object.Parent then
-				local second = self:Animate(object, {Position = start - UDim2.fromOffset(offset, 0)}, info)
+				local second = self:Animate(object, {Position = start - UDim2.fromOffset(offset, 0)}, info, "shake2")
 				if second then
 					self:TrackCleanup(second.Completed:Connect(function()
-						if object.Parent then self:Animate(object, {Position = start}, info) end
+						if object.Parent then self:Animate(object, {Position = start}, info, "shake3") end
 					end))
 				end
 			end
@@ -21173,14 +21190,25 @@ local function makeSectionIn(library: any, parent: Instance, tab: any, options: 
 		Size = UDim2.new(1, 0, 1, -top),
 	}, frame)
 	make("UIListLayout", {Padding = UDim.new(0, 10), SortOrder = Enum.SortOrder.LayoutOrder}, section.Content)
+	local lastH = -1
 	local function resize()
 		local layout = section.Content:FindFirstChildOfClass("UIListLayout")
-		if layout then frame.Size = UDim2.new(1, 0, 0, layout.AbsoluteContentSize.Y + top) end
+		if not layout then return end
+		local h = math.ceil(layout.AbsoluteContentSize.Y + top)
+		if h < 40 then h = 40 end
+		if math.abs(h - lastH) < 1 then return end
+		lastH = h
+		frame.Size = UDim2.new(1, 0, 0, h)
 	end
-	library:_connect(section.Content.ChildAdded, resize)
-	library:_connect(section.Content.ChildRemoved, resize)
+	library:_connect(section.Content.ChildAdded, function() task.defer(resize) end)
+	library:_connect(section.Content.ChildRemoved, function() task.defer(resize) end)
 	local layout = section.Content:FindFirstChildOfClass("UIListLayout")
-	if layout then library:_connect(layout:GetPropertyChangedSignal("AbsoluteContentSize"), resize) end
+	if layout then
+		library:_connect(layout:GetPropertyChangedSignal("AbsoluteContentSize"), function()
+			task.defer(resize)
+		end)
+	end
+	task.defer(resize)
 	return section
 end
 function Section:AddSection(options: Options): any
